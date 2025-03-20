@@ -284,3 +284,18 @@ class MainWindow(QMainWindow):
             self.show_error(f"Failed to create boundary: {str(e)}")
         
         return None
+
+    def on_delete_boundary_requested(self, boundary):
+        """Handle request to delete a specific boundary."""
+        if boundary:
+            self.logger.info(f"Deleting boundary '{boundary.name}'")
+            
+            # Use the boundary's delete method to ensure label is removed too
+            boundary.delete()
+            
+            # Remove from scene
+            self.canvas.scene().removeItem(boundary)
+            
+            # Remove from boundaries list
+            if boundary in self.canvas.boundaries:
+                self.canvas.boundaries.remove(boundary)

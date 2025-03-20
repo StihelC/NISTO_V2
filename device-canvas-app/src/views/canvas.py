@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsLineItem,
                            QGraphicsRectItem, QGraphicsItemGroup)
-from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QRectF
+from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QRectF, QEvent
 from PyQt5.QtGui import QPainter, QBrush, QColor, QPen  # Ensure QPen is imported
 from models.device import Device
 from models.boundary import Boundary
@@ -82,9 +82,14 @@ class CanvasMode:
 
 
 class SelectMode(CanvasMode):
-    """Mode for selecting and manipulating devices."""
+    """Mode for selecting and manipulating devices and boundaries."""
     
     def handle_mouse_press(self, event, scene_pos, item):
+        # For double clicks on boundaries, start editing the label
+        if event.type() == QEvent.MouseButtonDblClick and isinstance(item, Boundary):
+            if item.label:
+                item.label.start_editing()
+                return True
         # Let the default QGraphicsView selection behavior handle it
         return False
     

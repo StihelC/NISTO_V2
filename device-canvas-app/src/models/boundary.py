@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QGraphicsRectItem, QGraphicsTextItem, QGraphicsItem, QGraphicsItemGroup
+from PyQt5.QtWidgets import QGraphicsRectItem, QGraphicsTextItem, QGraphicsItem
 from PyQt5.QtGui import QColor, QPen, QBrush, QFont
 from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal, QObject
 
@@ -14,23 +14,10 @@ class EditableTextItem(QGraphicsTextItem):
         self.setFlag(QGraphicsTextItem.ItemIsSelectable, True)
         self._editable = False
         self._original_text = text
-        self._original_flags = self.flags()
         
         # Style
         self.setDefaultTextColor(QColor(20, 20, 20, 200))
         self.setFont(QFont("Arial", 10, QFont.Bold))
-        
-        # Add a slight background for better visibility
-        self._add_background()
-    
-    def _add_background(self):
-        """Add semi-transparent background rect behind text."""
-        # This is done when the text changes or initially set
-        rect = self.boundingRect()
-        rect = QRectF(rect.x() - 2, rect.y() - 2, rect.width() + 4, rect.height() + 4)
-        
-        # Store the rect for later adjustment
-        self._bg_rect = rect
     
     def start_editing(self):
         """Make the text editable."""
@@ -46,8 +33,6 @@ class EditableTextItem(QGraphicsTextItem):
             self._editable = False
             self.setTextInteractionFlags(Qt.NoTextInteraction)
             self.clearFocus()
-            # Adjustment to ensure text stays properly sized
-            self._add_background()
             return self.toPlainText()
         return None
     
@@ -102,11 +87,12 @@ class Boundary(QGraphicsRectItem):
         self.setAcceptHoverEvents(True)
         self.setFlag(QGraphicsRectItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsRectItem.ItemIsMovable, True)
+        self.setFlag(QGraphicsRectItem.ItemSendsGeometryChanges, True)
         
         # Apply visual style
         self._apply_style()
         
-        # Create label at the bottom left outside
+        # Create label
         self._create_label()
         
     def _apply_style(self):
@@ -123,24 +109,19 @@ class Boundary(QGraphicsRectItem):
     
     def _create_label(self):
         """Create and position the editable label text."""
-        # Create editable text item
-        self.label = EditableTextItem(self.name)
+        # Create editable text item as a child of this boundary
+        self.label = EditableTextItem(self.name, self)
         
-        # Make label part of the scene but not a child of this item
-        # so it doesn't move with the boundary
-        if self.scene():
-            self.scene().addItem(self.label)
-            
-        # Position at bottom left outside
+        # Position at bottom left outside the boundary
         self._update_label_position()
     
     def _update_label_position(self):
         """Update the label position relative to the boundary."""
-        # Position at bottom left outside
-        rect = self.rect()
-        scene_rect = self.mapRectToScene(rect)
-        # Place text just below the bottom-left corner
-        self.label.setPos(scene_rect.left(), scene_rect.bottom() + 5)
+        if hasattr(self, 'label') and self.label:
+            # Position at bottom left outside the boundary rectangle
+            rect = self.rect()
+            # Use local coordinates since the label is a child item
+            self.label.setPos(rect.left(), rect.bottom() + 5)
     
     def text_edited(self, new_text):
         """Handle when the label text has been edited."""
@@ -153,19 +134,23 @@ class Boundary(QGraphicsRectItem):
     
     def set_name(self, name):
         """Change the boundary name."""
-        self.name = name
-        self.label.setPlainText(name)
+        if name != self.name:
+            self.name = name
+            if hasattr(self, 'label') and self.label:
+                self.label.setPlainText(name)
     
     def set_color(self, color):
         """Change the boundary color."""
         self.color = color
         self._apply_style()
     
-    def shape(self):
-        """Define the shape for hit detection and selection."""
-        # Use default shape but with a bit of padding for easier selection
-        path = super().shape()
-        return path
+    def itemChange(self, change, value):
+        """Handle changes in item state."""
+        if change == QGraphicsRectItem.ItemPositionHasChanged:
+            # No need to update label position when boundary moves
+            # since the label is a child item and moves automatically
+            pass
+        return super().itemChange(change, value)
     
     def hoverEnterEvent(self, event):
         """Handle hover enter event with visual feedback."""
@@ -179,3 +164,11 @@ class Boundary(QGraphicsRectItem):
         # Restore original appearance
         self._apply_style()
         super().hoverLeaveEvent(event)
+    
+    def update_geometry(self, rect):
+        """Update the boundary's rect."""
+        self.setRect(rect)
+        self._update_label_position()
+    
+    # We no longer need a special delete method since the label 
+    # is a child item and will be automatically deleted with the boundary
