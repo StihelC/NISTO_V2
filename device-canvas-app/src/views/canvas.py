@@ -1,12 +1,16 @@
 from PyQt5.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsLineItem,
-                           QGraphicsRectItem, QGraphicsItemGroup)
+                           QGraphicsRectItem, QGraphicsItemGroup, QGraphicsItem)
 from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QRectF, QEvent
 from PyQt5.QtGui import QPainter, QBrush, QColor, QPen  # Ensure QPen is imported
+import logging
 from models.device import Device
 from models.boundary import Boundary
+from models.connection import Connection
+from controllers.mode_manager import ModeManager
+from constants import Modes
 
 class TemporaryGraphicsManager:
-    """Class to manage temporary graphics items for preview purposes."""
+    """Helper class to manage temporary graphics items during interactions."""
     
     def __init__(self, scene):
         self.scene = scene
@@ -27,10 +31,33 @@ class TemporaryGraphicsManager:
         self.temp_items.append(rect_item)
         return rect_item
     
+    def add_temp_line(self, start_pos, end_pos=None, style=Qt.DashLine, color=QColor(0, 0, 0, 180), width=2):
+        """Add a temporary line to the scene."""
+        end_pos = end_pos or start_pos  # If no end_pos provided, use start_pos
+        
+        # Create a line item
+        line = QGraphicsLineItem(start_pos.x(), start_pos.y(), end_pos.x(), end_pos.y())
+        
+        # Style the line
+        pen = QPen(color, width, style)
+        pen.setCapStyle(Qt.RoundCap)  # Rounded ends look better
+        line.setPen(pen)
+        
+        # Add to scene and track it
+        self.scene.addItem(line)
+        self.temp_items.append(line)
+        return line
+    
+    def update_line(self, line, end_pos):
+        """Update the endpoint of a temporary line."""
+        if line in self.temp_items:
+            line_obj = line.line()
+            line.setLine(line_obj.x1(), line_obj.y1(), end_pos.x(), end_pos.y())
+    
     def clear(self):
         """Remove all temporary items from the scene."""
         for item in self.temp_items:
-            if item.scene() == self.scene:
+            if item.scene() == self.scene:  # Check if item is still in the scene
                 self.scene.removeItem(item)
         self.temp_items.clear()
 
@@ -74,15 +101,44 @@ class CanvasMode:
     
     def activate(self):
         """Called when this mode is activated."""
-        pass
+        # By default, make devices non-draggable in every mode
+        self.set_devices_draggable(False)
     
     def deactivate(self):
         """Called when this mode is deactivated."""
         pass
+    
+    def set_devices_draggable(self, draggable):
+        """Helper to set draggability for all devices."""
+        for device in self.canvas.devices:
+            device.setFlag(QGraphicsItem.ItemIsMovable, draggable)
+
+
+class DeviceInteractionMode(CanvasMode):
+    """Base class for modes that interact with devices."""
+    
+    def is_device(self, item):
+        """Check if an item is a device."""
+        return isinstance(item, Device)
+    
+    def get_device_at_position(self, pos):
+        """Get a device at the given scene position."""
+        item = self.canvas.scene().itemAt(pos, self.canvas.transform())
+        if self.is_device(item):
+            return item
+        return None
 
 
 class SelectMode(CanvasMode):
     """Mode for selecting and manipulating devices and boundaries."""
+    
+    def activate(self):
+        """Enable dragging when select mode is active."""
+        self.set_devices_draggable(True)
+    
+    def deactivate(self):
+        """Disable dragging when leaving select mode."""
+        self.set_devices_draggable(False)
     
     def handle_mouse_press(self, event, scene_pos, item):
         # For double clicks on boundaries, start editing the label
@@ -108,7 +164,7 @@ class AddDeviceMode(CanvasMode):
         return Qt.CrossCursor
 
 
-class DeleteMode(CanvasMode):
+class DeleteMode(DeviceInteractionMode):
     """Mode for deleting items from the canvas."""
     
     def handle_mouse_press(self, event, scene_pos, item):
@@ -118,6 +174,9 @@ class DeleteMode(CanvasMode):
                 return True
             elif isinstance(item, Boundary):
                 self.canvas.delete_boundary_requested.emit(item)
+                return True
+            elif isinstance(item, Connection):
+                self.canvas.delete_connection_requested.emit(item)
                 return True
             else:
                 # For other item types
@@ -190,63 +249,156 @@ class AddConnectionMode(CanvasMode):
     def __init__(self, canvas):
         super().__init__(canvas)
         self.source_device = None
+        self.hover_device = None  # Track device under cursor
         self.temp_line = None
+        self.logger = logging.getLogger(__name__)
     
-    def handle_mouse_press(self, event, scene_pos, item):
-        # Check if we clicked on a device
-        if isinstance(item, Device):
-            if not self.source_device:
-                # First click - select source device
-                self.source_device = item
-                self.start_temp_line(item.get_port_position())
-            else:
-                # Second click - create connection if target is a device
-                if item != self.source_device:
-                    self.canvas.add_connection_requested.emit(self.source_device, item)
+    def activate(self):
+        """Called when this mode is activated."""
+        # Make devices non-draggable in this mode
+        for device in self.canvas.devices:
+            device.setFlag(QGraphicsItem.ItemIsMovable, False)
+            
+        # Force update to show connection points
+        self.canvas.viewport().update()
+        
+        self.logger.debug("Connection mode activated")
+    
+    def deactivate(self):
+        """Called when this mode is deactivated."""
+        self.clean_up()
+        
+        # Force update to hide connection points
+        self.canvas.viewport().update()
+        
+        self.logger.debug("Connection mode deactivated")
+    
+    def is_device(self, item):
+        """Check if an item is a device."""
+        return isinstance(item, Device)
+    
+    def get_device_at_position(self, pos):
+        """Get a device at the given scene position."""
+        # Try direct hit test
+        item = self.canvas.scene().itemAt(pos, self.canvas.transform())
+        if self.is_device(item):
+            return item
+            
+        # If that fails, check all devices manually
+        for device in self.canvas.devices:
+            if device.sceneBoundingRect().contains(pos):
+                return device
                 
-                # Clean up and reset
+        return None
+    
+    def mouse_press_event(self, event):
+        """Handle mouse press event."""
+        if event.button() != Qt.LeftButton:
+            return False
+        
+        # Get the position in scene coordinates
+        scene_pos = self.canvas.mapToScene(event.pos())
+        
+        # Check if we clicked on a device
+        device = self.get_device_at_position(scene_pos)
+        
+        if device:
+            if not self.source_device:
+                # First click - set source device
+                self.source_device = device
+                
+                # Get the nearest port to where we clicked
+                start_port = device.get_nearest_port(scene_pos)
+                
+                # Create a temporary line for preview
+                self.temp_line = QGraphicsLineItem(
+                    start_port.x(), start_port.y(), 
+                    start_port.x(), start_port.y()
+                )
+                
+                # Make the line visually distinctive
+                pen = QPen(QColor(0, 120, 215), 2, Qt.DashLine)
+                pen.setDashPattern([5, 3])  # 5px dash, 3px gap
+                pen.setCapStyle(Qt.RoundCap)
+                self.temp_line.setPen(pen)
+                
+                # Make sure it's on top of other items
+                self.temp_line.setZValue(1000) 
+                
+                # Add to scene
+                self.canvas.scene().addItem(self.temp_line)
+                
+                self.logger.debug(f"Started connection from device: {device}")
+                return True
+            else:
+                # Second click - finalize connection
+                if device != self.source_device:
+                    # Emit signal to the canvas to create the connection
+                    # Don't call add_connection directly on the device
+                    self.logger.debug(f"Creating connection from {self.source_device} to {device}")
+                    self.canvas.add_connection_requested.emit(self.source_device, device)
+                
+                # Clean up temporary items
                 self.clean_up()
-            return True
+                return True
         elif self.source_device:
-            # Clicked somewhere else after selecting source - cancel
+            # Clicked somewhere else - cancel the operation
+            self.logger.debug("Connection cancelled")
+            self.clean_up()
+            return True
+        
+        return False
+    
+    def mouse_move_event(self, event):
+        """Update line position during mouse movement."""
+        current_pos = self.canvas.mapToScene(event.pos())
+        
+        # Check if hovering over a device
+        hover_device = self.get_device_at_position(current_pos)
+        if hover_device != self.hover_device:
+            # Device under cursor changed
+            self.hover_device = hover_device
+            self.canvas.viewport().update()  # Force redraw to update connection points
+        
+        if self.source_device and self.temp_line:
+            # Get the start position from the existing line
+            line = self.temp_line.line()
+            start_pos = QPointF(line.x1(), line.y1())
+            
+            # Update end position
+            end_pos = current_pos
+            
+            # If hovering over a potential target device, snap to nearest port
+            if hover_device and hover_device != self.source_device:
+                end_pos = hover_device.get_nearest_port(current_pos)
+            
+            # Update the line
+            self.temp_line.setLine(start_pos.x(), start_pos.y(), end_pos.x(), end_pos.y())
+            return True
+            
+        return False
+    
+    def clean_up(self):
+        """Clean up temporary items and reset state."""
+        if self.temp_line:
+            self.canvas.scene().removeItem(self.temp_line)
+            self.temp_line = None
+        
+        self.source_device = None
+        self.hover_device = None
+    
+    def key_press_event(self, event):
+        """Handle key press events."""
+        # Cancel with Escape key
+        if event.key() == Qt.Key_Escape and self.source_device:
+            self.logger.debug("Connection cancelled with Escape key")
             self.clean_up()
             return True
         return False
     
-    def mouse_move_event(self, event):
-        if self.source_device and self.temp_line:
-            # Update temporary line endpoint
-            current_pos = self.canvas.mapToScene(event.pos())
-            self.update_temp_line(current_pos)
-            event.accept()
-            return True
-        return False
-    
-    def start_temp_line(self, start_pos):
-        """Start drawing a temporary connection line."""
-        self.temp_line = QGraphicsLineItem(start_pos.x(), start_pos.y(), start_pos.x(), start_pos.y())
-        self.temp_line.setPen(QPen(QColor(0, 0, 0, 180), 2, Qt.DashLine))
-        self.canvas.scene().addItem(self.temp_line)
-    
-    def update_temp_line(self, end_pos):
-        """Update the temporary connection line endpoint."""
-        if self.temp_line:
-            line = self.temp_line.line()
-            self.temp_line.setLine(line.x1(), line.y1(), end_pos.x(), end_pos.y())
-    
-    def clean_up(self):
-        """Clean up temporary items and reset state."""
-        if self.temp_line and self.temp_line in self.canvas.scene().items():
-            self.canvas.scene().removeItem(self.temp_line)
-        self.source_device = None
-        self.temp_line = None
-    
-    def deactivate(self):
-        self.clean_up()
-    
     def cursor(self):
+        """Return the appropriate cursor for this mode."""
         if self.source_device:
-            # Change cursor when we've selected a source device
             return Qt.PointingHandCursor
         return Qt.CrossCursor
 
@@ -260,34 +412,30 @@ class Canvas(QGraphicsView):
     delete_item_requested = pyqtSignal(object)
     add_boundary_requested = pyqtSignal(object)  # QRectF
     add_connection_requested = pyqtSignal(object, object)  # source, target
-    delete_boundary_requested = pyqtSignal(object)
-
-    # Mode constants
-    MODE_SELECT = "select"
-    MODE_ADD_DEVICE = "add_device"
-    MODE_DELETE = "delete"
-    MODE_ADD_BOUNDARY = "add_boundary"
-    MODE_ADD_CONNECTION = "add_connection"
+    delete_connection_requested = pyqtSignal(object)  # connection
+    delete_boundary_requested = pyqtSignal(object)  # boundary
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        
+        # Setup logging
+        self.logger = logging.getLogger(__name__)
         
         # Create a scene to hold the items
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
         
-        # List to store devices
+        # Lists to store items
         self.devices = []
-        
-        # List to store boundaries
         self.boundaries = []
+        self.connections = []
         
-        # Setup rendering hints
+        # Set rendering hints for better quality
         self.setRenderHint(QPainter.Antialiasing)
         self.setRenderHint(QPainter.SmoothPixmapTransform)
         self.setRenderHint(QPainter.TextAntialiasing)
         
-        # Set scene rectangle
+        # Set scene rectangle (optional, can be adjusted)
         self._scene.setSceneRect(-2000, -2000, 4000, 4000)
         
         # Setup appearance
@@ -299,64 +447,85 @@ class Canvas(QGraphicsView):
         # Mouse tracking
         self.setMouseTracking(True)
         
+        # Setup mode manager
+        self.mode_manager = ModeManager(self)
+        
         # Set up modes
         self._setup_modes()
-        self.set_mode(self.MODE_SELECT)
+        
+        # Set initial mode
+        self.set_mode(Modes.SELECT)
     
     def _setup_modes(self):
         """Initialize all available interaction modes."""
-        self.modes = {
-            self.MODE_SELECT: SelectMode(self),
-            self.MODE_ADD_DEVICE: AddDeviceMode(self),
-            self.MODE_DELETE: DeleteMode(self),
-            self.MODE_ADD_BOUNDARY: AddBoundaryMode(self),
-            self.MODE_ADD_CONNECTION: AddConnectionMode(self)
+        # Use a dictionary to create modes
+        mode_classes = {
+            Modes.SELECT: SelectMode,
+            Modes.ADD_DEVICE: AddDeviceMode,
+            Modes.DELETE: DeleteMode,
+            Modes.ADD_BOUNDARY: AddBoundaryMode,
+            Modes.ADD_CONNECTION: AddConnectionMode
         }
-        self.current_mode = None
+        
+        # Create and register each mode with the manager
+        for mode_id, mode_class in mode_classes.items():
+            mode = mode_class(self)
+            self.mode_manager.register_mode(mode_id, mode)
     
     def set_mode(self, mode):
         """Set the current interaction mode."""
-        if mode not in self.modes:
-            print(f"Warning: Unknown mode '{mode}'")
-            mode = self.MODE_SELECT
-            
-        # Deactivate current mode if exists
-        if self.current_mode:
-            self.modes[self.current_mode].deactivate()
-            
-        # Activate new mode
-        self.current_mode = mode
-        self.modes[mode].activate()
-        self.setCursor(self.modes[mode].cursor())
+        self.mode_manager.set_mode(mode)
     
     def mousePressEvent(self, event):
-        """Handle mouse press events using the current mode."""
-        if self.current_mode:
-            if self.modes[self.current_mode].mouse_press_event(event):
-                return
-        super().mousePressEvent(event)
+        """Handle mouse press events."""
+        try:
+            # Debug print
+            print(f"Canvas: mousePressEvent at {event.pos()}")
+            
+            if not self.mode_manager.handle_event("mouse_press_event", event):
+                super().mousePressEvent(event)
+        except Exception as e:
+            import traceback
+            self.logger.error(f"Error in mousePressEvent: {str(e)}")
+            traceback.print_exc()
     
     def mouseMoveEvent(self, event):
-        """Handle mouse move events using the current mode."""
-        if self.current_mode:
-            if self.modes[self.current_mode].mouse_move_event(event):
-                return
-        super().mouseMoveEvent(event)
+        """Handle mouse move events."""
+        try:
+            # Only debug occasionally to avoid console spam
+            if event.pos().x() % 100 == 0 and event.pos().y() % 100 == 0:
+                print(f"Canvas: mouseMoveEvent at {event.pos()}")
+                
+            if not self.mode_manager.handle_event("mouse_move_event", event):
+                super().mouseMoveEvent(event)
+        except Exception as e:
+            import traceback
+            self.logger.error(f"Error in mouseMoveEvent: {str(e)}")
+            traceback.print_exc()
     
     def mouseReleaseEvent(self, event):
-        """Handle mouse release events using the current mode."""
-        if self.current_mode:
-            if self.modes[self.current_mode].mouse_release_event(event):
-                return
-        super().mouseReleaseEvent(event)
+        if not self.mode_manager.handle_event("mouse_release_event", event):
+            super().mouseReleaseEvent(event)
     
     def keyPressEvent(self, event):
-        """Handle key press events using the current mode."""
-        if self.current_mode:
-            if self.modes[self.current_mode].key_press_event(event):
-                return
-        super().keyPressEvent(event)
+        if not self.mode_manager.handle_event("key_press_event", event):
+            super().keyPressEvent(event)
     
     def scene(self):
         """Get the graphics scene."""
         return self._scene
+    
+    def test_temporary_graphics(self):
+        """Test method to verify temporary graphics are working."""
+        temp_graphics = TemporaryGraphicsManager(self.scene())
+        
+        # Create a line from center to right
+        center = QPointF(0, 0)
+        right = QPointF(200, 0)
+        line = temp_graphics.add_temp_line(center, right, 
+                                          color=QColor(255, 0, 0, 200),
+                                          width=5)
+        
+        # Schedule removal after 3 seconds
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(3000, temp_graphics.clear)

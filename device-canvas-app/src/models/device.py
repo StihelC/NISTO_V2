@@ -1,259 +1,325 @@
-from PyQt5.QtCore import QPointF, pyqtSignal, Qt, QObject
-from PyQt5.QtWidgets import (QGraphicsItemGroup, QGraphicsItem, QGraphicsTextItem,
-                           QGraphicsRectItem, QGraphicsEllipseItem)
-from PyQt5.QtGui import QPixmap, QFont, QPen, QBrush, QColor
+from PyQt5.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsTextItem
+from PyQt5.QtGui import QPixmap, QColor, QPen, QBrush, QPainterPath, QPainter
+from PyQt5.QtCore import QRectF, Qt, QPointF, QObject, pyqtSignal
 import uuid
+import os
+import logging
+from constants import DeviceTypes
 
-# Create a QObject-based class for signals
 class DeviceSignals(QObject):
-    position_changed = pyqtSignal(object)
-    selection_changed = pyqtSignal(object, bool)
+    """Signals emitted by devices."""
+    selected = pyqtSignal(object, bool)  # device, is_selected
+    moved = pyqtSignal(object)  # device
+    double_clicked = pyqtSignal(object)  # device
+    deleted = pyqtSignal(object)  # device
 
-class Device(QGraphicsItemGroup):
-    """Unified device class for network topology.
+class Device(QGraphicsItem):
+    """Represents a network device in the topology."""
     
-    This class handles both the data model and visual representation of network devices.
-    """
-    
-    # Device type constants
-    ROUTER = "router"
-    SWITCH = "switch"
-    SERVER = "server"
-    FIREWALL = "firewall"
-    CLOUD = "cloud"
-    WORKSTATION = "workstation"
-    GENERIC = "generic"
-    
-    # Visual appearance constants
-    DEFAULT_RECT_SIZE = 80
-    PORT_SIZE = 12
-    LABEL_FONT_SIZE = 10
-    TYPE_FONT_SIZE = 8
-    BORDER_WIDTH = 2
-    
-    # Colors for different device types
-    DEVICE_COLORS = {
-        ROUTER: QColor(200, 200, 255),     # Light blue for routers
-        SWITCH: QColor(200, 255, 200),     # Light green for switches
-        SERVER: QColor(255, 200, 200),     # Light red for servers
-        FIREWALL: QColor(255, 200, 100),   # Orange for firewalls
-        CLOUD: QColor(230, 230, 255),      # Very light blue for cloud
-        WORKSTATION: QColor(220, 220, 220),# Light gray for workstations
-        GENERIC: QColor(240, 240, 240)     # Light gray for generic devices
-    }
-    
-    # Device type properties
+    # Device properties organized by type
     DEVICE_PROPERTIES = {
-        ROUTER: {
-            'forwarding_table': {},
-            'routing_protocol': 'OSPF',
+        DeviceTypes.ROUTER: {
             'icon': 'router.png',
+            'color': QColor(200, 120, 60),  # Orange-brown
+            'routing_protocol': 'OSPF',
+            'forwarding_table': {}
         },
-        SWITCH: {
-            'vlan_support': True,
-            'port_count': 24,
-            'switching_capacity': '48 Gbps',
+        DeviceTypes.SWITCH: {
             'icon': 'switch.png',
+            'color': QColor(60, 120, 200),  # Blue
+            'ports': 24,
+            'managed': True,
+            'vlan_support': True
         },
-        SERVER: {
-            'cpu': '4 cores',
-            'memory': '16 GB',
-            'storage': '1 TB',
-            'os': 'Linux',
-            'icon': 'server.png',
-        },
-        FIREWALL: {
-            'inspection_type': 'Stateful',
-            'throughput': '1 Gbps',
+        DeviceTypes.FIREWALL: {
             'icon': 'firewall.png',
+            'color': QColor(200, 60, 60),  # Red
+            'rules': [],
+            'inspection_type': 'stateful'
         },
-        CLOUD: {
-            'provider': 'Generic',
-            'region': 'Default',
-            'icon': 'cloud.png',
+        DeviceTypes.SERVER: {
+            'icon': 'server.png',
+            'color': QColor(60, 160, 60),  # Green
+            'services': [],
+            'os': 'Linux'
         },
-        WORKSTATION: {
-            'os': 'Windows',
-            'cpu': '2 cores',
-            'memory': '8 GB',
+        DeviceTypes.WORKSTATION: {
             'icon': 'workstation.png',
+            'color': QColor(150, 120, 180),  # Purple
+            'os': 'Windows'
         },
-        GENERIC: {
-            'description': 'Generic network device',
-            'icon': 'generic_device.png',
+        DeviceTypes.CLOUD: {
+            'icon': 'cloud.png',
+            'color': QColor(100, 160, 220),  # Light blue
+            'provider': 'AWS'
+        },
+        DeviceTypes.GENERIC: {
+            'icon': 'device.png',
+            'color': QColor(150, 150, 150)  # Gray
         }
     }
     
-    def __init__(self, name, device_type):
-        """Initialize a device."""
+    def __init__(self, name, device_type, properties=None):
+        """Initialize a network device."""
         super().__init__()
+        
+        # Setup logging
+        self.logger = logging.getLogger(__name__)
+        
+        # Device properties
+        self.id = str(uuid.uuid4())
+        self.name = name
+        self.device_type = device_type
+        self.properties = self._init_properties(properties)
         
         # Create signals object
         self.signals = DeviceSignals()
         
-        # Generate a unique ID
-        self.id = str(uuid.uuid4())[:8]
+        # Set flags for interactivity
+        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         
-        # Store basic properties
-        self.name = name
-        self.device_type = device_type.lower()
-        self.connections = []
+        # Set Z value to be above connections
+        self.setZValue(10)
         
-        # Copy properties from the device type template
-        if self.device_type in self.DEVICE_PROPERTIES:
-            self.properties = self.DEVICE_PROPERTIES[self.device_type].copy()
-        else:
-            self.device_type = self.GENERIC  # Fallback to generic
-            self.properties = self.DEVICE_PROPERTIES[self.GENERIC].copy()
+        # Size settings
+        self.width = 60
+        self.height = 60
         
-        # Define a single connection port
-        self.port = {"position": QPointF(0, 0), "connections": []}
+        # Track selection state
+        self.is_selected = False
         
-        # Visual components (will be set in _create_visual)
-        self.rect_item = None
-        self.name_item = None
-        self.type_item = None
-        self.port_visual = None
+        # Track connection points visibility
+        self._show_connection_points = False
         
-        # Set flags for interaction
-        self.setFlag(QGraphicsItemGroup.ItemIsSelectable, True)
-        self.setFlag(QGraphicsItemGroup.ItemIsMovable, True)
-        self.setFlag(QGraphicsItemGroup.ItemSendsGeometryChanges, True)
-        
-        # Create visual representation
-        self._create_visual()
-        
-        print(f"DEBUG: Device '{name}' of type '{device_type}' created with ID: {self.id}")
+        # Create child items
+        self._create_visuals()
     
-    def _create_visual(self):
+    def _init_properties(self, custom_properties=None):
+        """Initialize the device properties based on type and custom values."""
+        # Get default properties for this device type
+        default_props = self.DEVICE_PROPERTIES.get(self.device_type, self.DEVICE_PROPERTIES[DeviceTypes.GENERIC]).copy()
+        
+        # Override with custom properties if provided
+        if custom_properties:
+            default_props.update(custom_properties)
+        
+        return default_props
+    
+    def _create_visuals(self):
         """Create the visual representation of the device."""
-        try:
-            rect_size = self.DEFAULT_RECT_SIZE
-            
-            # Create the device body (rectangle)
-            self.rect_item = QGraphicsRectItem(-rect_size/2, -rect_size/2, rect_size, rect_size)
-            self.rect_item.setPen(QPen(QColor(0, 0, 0), self.BORDER_WIDTH))
-            
-            # Set color based on device type
-            color = self.DEVICE_COLORS.get(self.device_type, self.DEVICE_COLORS[self.GENERIC])
-            self.rect_item.setBrush(QBrush(color))
-            self.addToGroup(self.rect_item)
-            
-            # Add device name text
-            self.name_item = QGraphicsTextItem(self.name)
-            self.name_item.setFont(QFont("Arial", self.LABEL_FONT_SIZE))
-            self.name_item.setPos(-self.name_item.boundingRect().width()/2, -rect_size/2 - 25)
-            self.addToGroup(self.name_item)
-            
-            # Add device type text
-            self.type_item = QGraphicsTextItem(self.device_type)
-            self.type_item.setFont(QFont("Arial", self.TYPE_FONT_SIZE))
-            self.type_item.setPos(-self.type_item.boundingRect().width()/2, rect_size/2 + 5)
-            self.addToGroup(self.type_item)
-            
-            # Add single connection port (centered)
-            self._init_port()
-            
-            print(f"DEBUG: Visual components created for device {self.name}")
-            
-        except Exception as e:
-            print(f"ERROR: Failed to create visual for device: {str(e)}")
-            import traceback
-            traceback.print_exc()
-    
-    def _init_port(self):
-        """Initialize the single connection port for the device."""
-        try:
-            port_size = self.PORT_SIZE
-            
-            # Create a small circle for the port at the center
-            self.port_visual = QGraphicsEllipseItem(
-                -port_size/2, 
-                -port_size/2,
-                port_size, 
-                port_size
-            )
-            self.port_visual.setPen(QPen(Qt.black, 1))
-            self.port_visual.setBrush(QBrush(QColor(100, 100, 100)))
-            
-            # Store the visual component in the port data
-            self.port["visual"] = self.port_visual
-            
-            # Add port to the item group
-            self.addToGroup(self.port_visual)
-            
-            # Make port invisible by default - will show when selected
-            self.port_visual.setVisible(False)
-            
-            print(f"DEBUG: Initialized connection port for device {self.name}")
+        # Create background rectangle
+        self.rect_item = QGraphicsRectItem(0, 0, self.width, self.height, self)
         
+        # Set the visual appearance based on device type
+        device_color = self.properties.get('color', QColor(150, 150, 150))
+        
+        # Create a visually distinct appearance with gradient or solid color
+        brush = QBrush(device_color)
+        self.rect_item.setBrush(brush)
+        self.rect_item.setPen(QPen(Qt.black, 1))
+        
+        # Add text for the device name
+        self.text_item = QGraphicsTextItem(self.name, self)
+        # Center the text
+        text_width = self.text_item.boundingRect().width()
+        text_x = (self.width - text_width) / 2
+        self.text_item.setPos(text_x, self.height + 5)  # Position below rectangle
+        
+        # Try to load the icon as a separate item
+        self.icon_item = None
+        self._try_load_icon()
+    
+    def _try_load_icon(self):
+        """Try to load an icon for the device type."""
+        try:
+            # Get icon name from properties
+            icon_name = self.properties.get('icon', 'device.png')
+            
+            # Possible icon locations
+            icon_paths = [
+                f"icons/{icon_name}",
+                f"resources/icons/{icon_name}",
+                f"src/resources/icons/{icon_name}",
+                f"../resources/icons/{icon_name}"
+            ]
+            
+            for path in icon_paths:
+                if os.path.exists(path):
+                    pixmap = QPixmap(path)
+                    if not pixmap.isNull():
+                        # Create icon item
+                        self.icon_item = QGraphicsPixmapItem(pixmap, self)
+                        # Scale the icon to fit
+                        icon_scale = min(self.width / pixmap.width(), self.height / pixmap.height()) * 0.7
+                        self.icon_item.setScale(icon_scale)
+                        # Center the icon
+                        icon_width = pixmap.width() * icon_scale
+                        icon_height = pixmap.height() * icon_scale
+                        icon_x = (self.width - icon_width) / 2
+                        icon_y = (self.height - icon_height) / 2
+                        self.icon_item.setPos(icon_x, icon_y)
+                        return
+                        
+            self.logger.warning(f"No icon found for device type {self.device_type}")
         except Exception as e:
-            print(f"ERROR: Failed to initialize port: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            self.logger.error(f"Error loading device icon: {str(e)}")
+    
+    def boundingRect(self):
+        """Return the bounding rectangle of the device."""
+        # Include space for text below
+        return QRectF(0, 0, self.width, self.height + 20)
+    
+    def shape(self):
+        """Return a more precise shape for hit detection."""
+        path = QPainterPath()
+        path.addRect(0, 0, self.width, self.height)  # Just the main rectangle, not the text
+        return path
+    
+    def paint(self, painter, option, widget=None):
+        """Paint the device with connection points if needed."""
+        # Most painting is handled by child items, but we draw connection points here
+        
+        # Check if we need to show connection points
+        showing_points = self._show_connection_points
+        
+        # Also show connection points when in connection mode
+        if not showing_points and self.scene():
+            from constants import Modes
+            canvas = self._get_canvas()
+            if canvas and hasattr(canvas, 'mode_manager'):
+                mode_mgr = canvas.mode_manager
+                if hasattr(mode_mgr, 'get_current_mode') and mode_mgr.current_mode == Modes.ADD_CONNECTION:
+                    showing_points = True
+                    
+                    # Check if this device is being hovered in connection mode
+                    if hasattr(mode_mgr, 'get_mode_instance'):
+                        mode = mode_mgr.get_mode_instance()
+                        is_hovered = hasattr(mode, 'hover_device') and mode.hover_device == self
+        
+        # Draw selection indicator
+        if self.isSelected():
+            painter.setPen(QPen(QColor(255, 140, 0), 2))  # Orange selection
+            painter.drawRect(-2, -2, self.width + 4, self.height + 4)
+        
+        # Draw connection points if needed
+        if showing_points:
+            painter.save()
+            
+            # Use a lighter color if this device is being hovered in connection mode
+            is_hovered = False
+            canvas = self._get_canvas()
+            if canvas and hasattr(canvas, 'mode_manager'):
+                if hasattr(canvas.mode_manager, 'get_mode_instance'):
+                    mode = canvas.mode_manager.get_mode_instance()
+                    is_hovered = hasattr(mode, 'hover_device') and mode.hover_device == self
+            
+            if is_hovered:
+                # Highlighted port appearance
+                painter.setPen(QPen(QColor(65, 105, 225), 2))  # Royal blue
+                painter.setBrush(QBrush(QColor(65, 105, 225, 100)))
+                radius = 6
+            else:
+                # Normal port appearance
+                painter.setPen(QPen(QColor(100, 100, 100), 1))
+                painter.setBrush(QBrush(QColor(200, 200, 200, 150)))
+                radius = 4
+            
+            # Draw each port
+            for port in self.get_connection_ports():
+                painter.drawEllipse(port, radius, radius)
+                
+            painter.restore()
+    
+    def _get_canvas(self):
+        """Helper method to get the canvas that contains this device."""
+        if not self.scene():
+            return None
+        
+        # Try to get parent, which should be the canvas
+        parent = self.scene().views()[0] if self.scene().views() else None
+        return parent
+    
+    def get_connection_ports(self):
+        """Get all available connection ports as local coordinates."""
+        # Define 8 compass points around the device
+        center_x = self.width / 2
+        center_y = self.height / 2
+        
+        ports = [
+            QPointF(center_x, 0),                # N
+            QPointF(self.width, 0),              # NE
+            QPointF(self.width, center_y),       # E
+            QPointF(self.width, self.height),    # SE
+            QPointF(center_x, self.height),      # S
+            QPointF(0, self.height),             # SW
+            QPointF(0, center_y),                # W
+            QPointF(0, 0)                        # NW
+        ]
+        
+        return ports
+    
+    def get_nearest_port(self, scene_pos):
+        """Get the nearest connection point to the given scene position."""
+        # Convert scene position to local coordinates
+        local_pos = self.mapFromScene(scene_pos)
+        
+        # Get all connection ports
+        ports = self.get_connection_ports()
+        
+        # Find closest port
+        closest_port = ports[0]
+        min_distance = self._distance(local_pos, ports[0])
+        
+        for port in ports[1:]:
+            distance = self._distance(local_pos, port)
+            if distance < min_distance:
+                min_distance = distance
+                closest_port = port
+        
+        # Convert back to scene coordinates
+        return self.mapToScene(closest_port)
+    
+    def _distance(self, p1, p2):
+        """Calculate distance between two points."""
+        return ((p1.x() - p2.x()) ** 2 + (p1.y() - p2.y()) ** 2) ** 0.5
+    
+    def get_center_position(self):
+        """Get the center position of the device in scene coordinates."""
+        center = QPointF(self.width / 2, self.height / 2)
+        return self.mapToScene(center)
+    
+    def setProperty(self, name, value):
+        """Set a custom property."""
+        if name == 'show_connection_points':
+            self._show_connection_points = value
+            self.update()  # Force redraw
+        else:
+            # Store in properties dict
+            self.properties[name] = value
     
     def itemChange(self, change, value):
-        """Handle item changes like selection and position."""
-        if change == QGraphicsItemGroup.ItemPositionHasChanged:
-            # Emit signal when position changes
-            self.signals.position_changed.emit(self)
-            
-            # Update all connections
-            for connection in self.connections:
-                if hasattr(connection, 'update_position'):
-                    connection.update_position()
-            
-        elif change == QGraphicsItemGroup.ItemSelectedChange:
-            # Emit signal when selection changes
-            self.signals.selection_changed.emit(self, bool(value))
-            
-            # Show/hide port based on selection
-            if value:
-                self.show_port()
-            else:
-                self.hide_port()
+        """Handle item changes."""
+        if change == QGraphicsItem.ItemPositionChange and self.scene():
+            # Item is about to move
+            pass
+        elif change == QGraphicsItem.ItemPositionHasChanged and self.scene():
+            # Item has moved
+            if hasattr(self.signals, 'moved'):
+                self.signals.moved.emit(self)
+        elif change == QGraphicsItem.ItemSelectedChange:
+            # Selection state is about to change
+            self.is_selected = bool(value)
+        elif change == QGraphicsItem.ItemSelectedHasChanged:
+            # Selection state has changed
+            if hasattr(self.signals, 'selected'):
+                self.signals.selected.emit(self, self.isSelected())
             
         return super().itemChange(change, value)
     
-    def show_port(self):
-        """Make connection port visible."""
-        if self.port_visual:
-            self.port_visual.setVisible(True)
-    
-    def hide_port(self):
-        """Hide connection port."""
-        if self.port_visual:
-            self.port_visual.setVisible(False)
-    
-    def update_property(self, key, value):
-        """Update a device property."""
-        self.properties[key] = value
-        print(f"DEBUG: Updated property '{key}' to '{value}' for device {self.name}")
-    
-    def add_connection(self, connection):
-        """Add a connection to this device."""
-        if connection not in self.connections:
-            self.connections.append(connection)
-            self.port["connections"].append(connection)
-            print(f"DEBUG: Added connection to device {self.name}. Total connections: {len(self.connections)}")
-    
-    def remove_connection(self, connection):
-        """Remove a connection from this device."""
-        if connection in self.connections:
-            self.connections.remove(connection)
-            if connection in self.port["connections"]:
-                self.port["connections"].remove(connection)
-            print(f"DEBUG: Removed connection from device {self.name}. Remaining connections: {len(self.connections)}")
-    
-    def get_port_position(self):
-        """Get the scene position of the connection port."""
-        return self.mapToScene(self.port["position"])
-    
-    def update_name(self, new_name):
-        """Update the device name."""
-        self.name = new_name
-        if self.name_item:
-            self.name_item.setPlainText(new_name)
-            # Recenter the text
-            self.name_item.setPos(-self.name_item.boundingRect().width()/2, self.name_item.y())
-        print(f"DEBUG: Updated device name to '{new_name}'")
+    def mouseDoubleClickEvent(self, event):
+        """Handle double click events."""
+        if hasattr(self.signals, 'double_clicked'):
+            self.signals.double_clicked.emit(self)
+        super().mouseDoubleClickEvent(event)
