@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsLineItem,
-                           QGraphicsRectItem, QGraphicsItemGroup, QGraphicsItem)
+                           QGraphicsRectItem, QGraphicsItemGroup, QGraphicsItem, QMenu)
 from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QRectF, QEvent
 from PyQt5.QtGui import QPainter, QBrush, QColor, QPen  # Ensure QPen is imported
 import logging
@@ -514,6 +514,65 @@ class Canvas(QGraphicsView):
     def scene(self):
         """Get the graphics scene."""
         return self._scene
+    
+    def contextMenuEvent(self, event):
+        """Handle context menu events."""
+        # Get item under cursor
+        pos = event.pos()
+        scene_pos = self.mapToScene(pos)
+        item = self.scene().itemAt(scene_pos, self.transform())
+        
+        if item:
+            # Create context menu based on item type
+            menu = QMenu()
+            
+            from models.connection import Connection
+            if isinstance(item, Connection):
+                # Connection context menu
+                self._create_connection_context_menu(menu, item)
+            elif isinstance(item, Device):
+                # Device context menu
+                self._create_device_context_menu(menu, item)
+            
+            if not menu.isEmpty():
+                menu.exec_(event.globalPos())
+                return
+        
+        # Default context menu if no item or specific menu
+        super().contextMenuEvent(event)
+
+    def _create_connection_context_menu(self, menu, connection):
+        """Create context menu for a connection."""
+        from models.connection import Connection
+        
+        # Connection style submenu
+        style_menu = menu.addMenu("Routing Style")
+        
+        # Straight style
+        straight_action = style_menu.addAction("Straight")
+        straight_action.setCheckable(True)
+        straight_action.setChecked(connection.routing_style == Connection.STYLE_STRAIGHT)
+        straight_action.triggered.connect(
+            lambda: connection.set_routing_style(Connection.STYLE_STRAIGHT))
+        
+        # Orthogonal style
+        orthogonal_action = style_menu.addAction("Orthogonal")
+        orthogonal_action.setCheckable(True)
+        orthogonal_action.setChecked(connection.routing_style == Connection.STYLE_ORTHOGONAL)
+        orthogonal_action.triggered.connect(
+            lambda: connection.set_routing_style(Connection.STYLE_ORTHOGONAL))
+        
+        # Curved style
+        curved_action = style_menu.addAction("Curved")
+        curved_action.setCheckable(True)
+        curved_action.setChecked(connection.routing_style == Connection.STYLE_CURVED)
+        curved_action.triggered.connect(
+            lambda: connection.set_routing_style(Connection.STYLE_CURVED))
+        
+        # Delete action
+        menu.addSeparator()
+        delete_action = menu.addAction("Delete Connection")
+        delete_action.triggered.connect(lambda: self.delete_connection_requested.emit(connection))
     
     def test_temporary_graphics(self):
         """Test method to verify temporary graphics are working."""

@@ -127,7 +127,7 @@ class Connection(QGraphicsPathItem):
                 
             path.lineTo(tx, ty)
             
-        elif self.STYLE_CURVED:
+        elif self.routing_style == self.STYLE_CURVED:
             # Bezier curve
             sx, sy = self._source_port.x(), self._source_port.y()
             tx, ty = self._target_port.x(), self._target_port.y()

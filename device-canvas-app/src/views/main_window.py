@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QMainWindow, QToolBar, QAction, QFileDialog, 
                            QMessageBox, QMenu, QActionGroup, QDialog,
-                           QGraphicsLineItem, QGraphicsItem)
+                           QGraphicsLineItem, QGraphicsItem, QToolButton)
 from PyQt5.QtCore import QPointF, QRectF, QTimer, Qt
 from PyQt5.QtGui import QColor, QPen
 import logging
@@ -32,7 +32,11 @@ class MainWindow(QMainWindow):
         # Connect signals
         self.connect_signals()
         
+        self.mode_actions = {}  # Initialize mode_actions as an empty dictionary
         self.create_toolbar()
+
+        # Initialize default style
+        self.current_connection_style = Connection.STYLE_STRAIGHT
     
     def connect_signals(self):
         """Connect signals to handlers."""
@@ -46,53 +50,58 @@ class MainWindow(QMainWindow):
         self.canvas.delete_boundary_requested.connect(self.on_delete_boundary_requested)
     
     def create_toolbar(self):
+        """Create the main toolbar."""
         toolbar = QToolBar("Main Toolbar")
         self.addToolBar(toolbar)
         
-        # Create an action group for mutually exclusive mode buttons
-        mode_group = QActionGroup(self)
-        
-        # Mode selection actions
-        self.mode_actions = {}
-        
-        # Select mode
+        # Add mode toggle actions
         select_action = QAction("Select", self)
         select_action.setCheckable(True)
-        select_action.setChecked(True)  # Default mode
         select_action.triggered.connect(lambda: self.set_mode(Modes.SELECT))
-        mode_group.addAction(select_action)
-        toolbar.addAction(select_action)
-        self.mode_actions[Modes.SELECT] = select_action
         
-        # Add device mode
         add_device_action = QAction("Add Device", self)
         add_device_action.setCheckable(True)
         add_device_action.triggered.connect(lambda: self.set_mode(Modes.ADD_DEVICE))
-        mode_group.addAction(add_device_action)
-        toolbar.addAction(add_device_action)
-        self.mode_actions[Modes.ADD_DEVICE] = add_device_action
         
-        # Add connection mode
         add_connection_action = QAction("Add Connection", self)
         add_connection_action.setCheckable(True)
         add_connection_action.triggered.connect(lambda: self.set_mode(Modes.ADD_CONNECTION))
-        mode_group.addAction(add_connection_action)
-        toolbar.addAction(add_connection_action)
-        self.mode_actions[Modes.ADD_CONNECTION] = add_connection_action
         
-        # Add boundary mode
         add_boundary_action = QAction("Add Boundary", self)
         add_boundary_action.setCheckable(True)
         add_boundary_action.triggered.connect(lambda: self.set_mode(Modes.ADD_BOUNDARY))
-        mode_group.addAction(add_boundary_action)
-        toolbar.addAction(add_boundary_action)
-        self.mode_actions[Modes.ADD_BOUNDARY] = add_boundary_action
         
-        # Delete mode
         delete_action = QAction("Delete", self)
         delete_action.setCheckable(True)
         delete_action.triggered.connect(lambda: self.set_mode(Modes.DELETE))
+        
+        # Add actions to a group for mutual exclusion
+        mode_group = QActionGroup(self)
+        mode_group.addAction(select_action)
+        mode_group.addAction(add_device_action)
+        mode_group.addAction(add_connection_action)
+        mode_group.addAction(add_boundary_action)
         mode_group.addAction(delete_action)
+        mode_group.setExclusive(True)
+        
+        # Add actions to toolbar and store in mode_actions dictionary
+        toolbar.addAction(select_action)
+        self.mode_actions[Modes.SELECT] = select_action
+        
+        toolbar.addAction(add_device_action)
+        self.mode_actions[Modes.ADD_DEVICE] = add_device_action
+        
+        toolbar.addAction(add_connection_action)
+        self.mode_actions[Modes.ADD_CONNECTION] = add_connection_action
+        
+        # Select the default mode
+        select_action.setChecked(True)
+        
+        # Add boundary mode - no need to recreate, already created above
+        toolbar.addAction(add_boundary_action)
+        self.mode_actions[Modes.ADD_BOUNDARY] = add_boundary_action
+        
+        # Delete mode - no need to recreate, already created above
         toolbar.addAction(delete_action)
         self.mode_actions[Modes.DELETE] = delete_action
         
@@ -132,6 +141,20 @@ class MainWindow(QMainWindow):
         connection_points.triggered.connect(lambda: self.toggle_connection_points())
         toolbar.addAction(connection_points)
 
+        # Add connection style menu
+        connection_style_menu = self.create_connection_style_menu()
+        toolbar.addAction(connection_style_menu.menuAction())
+
+        # Add connection style selector
+        from PyQt5.QtWidgets import QToolButton
+        # Don't import Connection here, use the one imported at the top
+        
+        connection_style_btn = QToolButton()
+        connection_style_btn.setText("Connection Style")
+        connection_style_btn.setPopupMode(QToolButton.InstantPopup)
+        connection_style_btn.setMenu(self.create_connection_style_menu())
+        toolbar.addWidget(connection_style_btn)
+
     def set_mode(self, mode):
         """Set the current interaction mode."""
         self.canvas.set_mode(mode)
@@ -142,7 +165,7 @@ class MainWindow(QMainWindow):
         try:
             # Show dialog to get device details
             dialog = DeviceDialog(self)
-            if dialog.exec_() != QDialog.Accepted:
+            if (dialog.exec_() != QDialog.Accepted):
                 return
             
             # Get the data from dialog
@@ -211,12 +234,18 @@ class MainWindow(QMainWindow):
             
             connection = Connection(source_device, target_device, ConnectionTypes.ETHERNET)
             
+            # Apply the current connection style
+            if hasattr(self, 'current_connection_style'):
+                connection.set_routing_style(self.current_connection_style)
+            
             # Add to scene
             self.canvas.scene().addItem(connection)
+            if not hasattr(self.canvas, 'connections'):
+                self.canvas.connections = []
             self.canvas.connections.append(connection)
             
-            # Connect signals if needed
-            # connection.signals.selected.connect(...)
+            # Store as last connection for quick style changes
+            self.last_connection = connection
             
             self.logger.info(f"Added connection from {source_device.name} to {target_device.name}")
             
@@ -580,3 +609,63 @@ class MainWindow(QMainWindow):
                 # Handle deselection if necessary
         except Exception as e:
             self.logger.error(f"Error handling device selection: {str(e)}")
+
+    def create_connection_style_menu(self):
+        """Create a menu for selecting connection routing styles."""
+        # Connection should be imported at the top of the file
+        # from models.connection import Connection
+        
+        # Create style menu
+        self.connection_style_menu = QMenu("Connection Style")
+        
+        # Create actions
+        self.action_straight = QAction("Straight Lines", self)
+        self.action_straight.setCheckable(True)
+        self.action_straight.setChecked(True)  # Default
+        self.action_straight.triggered.connect(
+            lambda: self.set_connection_style(Connection.STYLE_STRAIGHT))
+        
+        self.action_orthogonal = QAction("Orthogonal (Right Angle)", self)
+        self.action_orthogonal.setCheckable(True)
+        self.action_orthogonal.triggered.connect(
+            lambda: self.set_connection_style(Connection.STYLE_ORTHOGONAL))
+        
+        self.action_curved = QAction("Curved Lines", self)
+        self.action_curved.setCheckable(True)
+        self.action_curved.triggered.connect(
+            lambda: self.set_connection_style(Connection.STYLE_CURVED))
+        
+        # Add to action group for mutual exclusion
+        style_group = QActionGroup(self)
+        style_group.addAction(self.action_straight)
+        style_group.addAction(self.action_orthogonal)
+        style_group.addAction(self.action_curved)
+        style_group.setExclusive(True)
+        
+        # Add actions to menu
+        self.connection_style_menu.addAction(self.action_straight)
+        self.connection_style_menu.addAction(self.action_orthogonal)
+        self.connection_style_menu.addAction(self.action_curved)
+        
+        return self.connection_style_menu
+
+    def set_connection_style(self, style):
+        """Set the routing style for new and selected connections."""
+        # Store current style for new connections
+        self.current_connection_style = style
+        
+        # Update all selected connections
+        for item in self.canvas.scene().selectedItems():
+            if isinstance(item, Connection):
+                item.set_routing_style(style)
+        
+        # Also update the last created connection if available
+        if hasattr(self, 'last_connection') and self.last_connection:
+            self.last_connection.set_routing_style(style)
+        
+        style_names = {
+            Connection.STYLE_STRAIGHT: "Straight",
+            Connection.STYLE_ORTHOGONAL: "Orthogonal",
+            Connection.STYLE_CURVED: "Curved"
+        }
+        self.logger.info(f"Connection style set to: {style_names.get(style, 'Unknown')}")
