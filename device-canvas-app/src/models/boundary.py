@@ -170,5 +170,3 @@ class Boundary(QGraphicsRectItem):
         self.setRect(rect)
         self._update_label_position()
     
-    # We no longer need a special delete method since the label 
-    # is a child item and will be automatically deleted with the boundary

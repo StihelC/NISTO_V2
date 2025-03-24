@@ -574,17 +574,3 @@ class Canvas(QGraphicsView):
         delete_action = menu.addAction("Delete Connection")
         delete_action.triggered.connect(lambda: self.delete_connection_requested.emit(connection))
     
-    def test_temporary_graphics(self):
-        """Test method to verify temporary graphics are working."""
-        temp_graphics = TemporaryGraphicsManager(self.scene())
-        
-        # Create a line from center to right
-        center = QPointF(0, 0)
-        right = QPointF(200, 0)
-        line = temp_graphics.add_temp_line(center, right, 
-                                          color=QColor(255, 0, 0, 200),
-                                          width=5)
-        
-        # Schedule removal after 3 seconds
-        from PyQt5.QtCore import QTimer
-        QTimer.singleShot(3000, temp_graphics.clear)

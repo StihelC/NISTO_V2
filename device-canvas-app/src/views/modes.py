@@ -56,7 +56,3 @@ class SelectMode(CanvasMode):
     
     def cursor(self):
         return Qt.ArrowCursor
-
-
-# Other mode classes remain largely the same, but 
-# without the duplicate draggability code...

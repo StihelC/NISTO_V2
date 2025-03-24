@@ -119,15 +119,6 @@ class MainWindow(QMainWindow):
         add_device_btn = toolbar.addAction("Quick Add")
         add_device_btn.setMenu(devices_menu)
 
-        # Add this to the create_toolbar method
-        test_action = QAction("Test Graphics", self)
-        test_action.triggered.connect(self.canvas.test_temporary_graphics)
-        toolbar.addAction(test_action)
-
-        test_line = QAction("Test Connection Line", self)
-        test_line.triggered.connect(self.test_connection_line)
-        toolbar.addAction(test_line)
-
         # Add to create_toolbar method
         show_bounds = QAction("Show Device Bounds", self)
         show_bounds.triggered.connect(self.show_device_bounds)
