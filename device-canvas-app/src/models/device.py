@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsTextItem
+from PyQt5.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsTextItem, QFileDialog
 from PyQt5.QtGui import QPixmap, QColor, QPen, QBrush, QPainterPath, QPainter
 from PyQt5.QtCore import QRectF, Qt, QPointF, QObject, pyqtSignal
 import uuid
@@ -59,7 +59,7 @@ class Device(QGraphicsItem):
         }
     }
     
-    def __init__(self, name, device_type, properties=None):
+    def __init__(self, name, device_type, properties=None, custom_icon_path=None):
         """Initialize a network device."""
         super().__init__()
         
@@ -71,6 +71,10 @@ class Device(QGraphicsItem):
         self.name = name
         self.device_type = device_type
         self.properties = self._init_properties(properties)
+        
+        # Path to custom icon if uploaded
+        self.custom_icon_path = custom_icon_path
+        self.logger.debug(f"Custom icon path set to: {self.custom_icon_path}")
         
         # Create signals object
         self.signals = DeviceSignals()
@@ -133,38 +137,65 @@ class Device(QGraphicsItem):
     
     def _try_load_icon(self):
         """Try to load an icon for the device type."""
-        try:
-            # Get icon name from properties
+        if self.custom_icon_path:
+            self.logger.debug(f"Trying to load custom icon from: {self.custom_icon_path}")
+            self._load_icon(self.custom_icon_path)
+        else:
             icon_name = self.properties.get('icon', 'device.png')
-            
-            # Possible icon locations
             icon_paths = [
                 f"icons/{icon_name}",
                 f"resources/icons/{icon_name}",
                 f"src/resources/icons/{icon_name}",
                 f"../resources/icons/{icon_name}"
             ]
-            
             for path in icon_paths:
                 if os.path.exists(path):
-                    pixmap = QPixmap(path)
-                    if not pixmap.isNull():
-                        # Create icon item
-                        self.icon_item = QGraphicsPixmapItem(pixmap, self)
-                        # Scale the icon to fit
-                        icon_scale = min(self.width / pixmap.width(), self.height / pixmap.height()) * 0.7
-                        self.icon_item.setScale(icon_scale)
-                        # Center the icon
-                        icon_width = pixmap.width() * icon_scale
-                        icon_height = pixmap.height() * icon_scale
-                        icon_x = (self.width - icon_width) / 2
-                        icon_y = (self.height - icon_height) / 2
-                        self.icon_item.setPos(icon_x, icon_y)
-                        return
-                        
+                    self.logger.debug(f"Loading default icon from: {path}")
+                    self._load_icon(path)
+                    return
             self.logger.warning(f"No icon found for device type {self.device_type}")
-        except Exception as e:
-            self.logger.error(f"Error loading device icon: {str(e)}")
+    
+    def _load_icon(self, path):
+        """Load and set the icon from the given path, cropping to fit in the square."""
+        pixmap = QPixmap(path)
+        if not pixmap.isNull():
+            # Create a new pixmap with the exact device dimensions
+            square_pixmap = QPixmap(self.width, self.height)
+            square_pixmap.fill(Qt.transparent)  # Make it transparent
+            
+            # Calculate the source rectangle (center of the original image)
+            src_width = min(pixmap.width(), pixmap.height())
+            src_height = src_width  # Keep it square
+            
+            src_x = (pixmap.width() - src_width) // 2
+            src_y = (pixmap.height() - src_height) // 2
+            
+            # Draw the center portion of the original image onto the square pixmap
+            painter = QPainter(square_pixmap)
+            painter.drawPixmap(
+                0, 0, self.width, self.height,  # Destination rectangle
+                pixmap,
+                src_x, src_y, src_width, src_height  # Source rectangle
+            )
+            painter.end()
+            
+            # Use the cropped square pixmap
+            self.icon_item = QGraphicsPixmapItem(square_pixmap, self)
+            self.icon_item.setPos(0, 0)  # Position at top-left corner
+            
+            self.logger.debug(f"Successfully loaded and cropped icon from: {path}")
+        else:
+            self.logger.error(f"Failed to load icon from: {path}")
+    
+    def upload_custom_icon(self):
+        """Open a file dialog to upload a custom icon."""
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getOpenFileName(None, "Select Custom Icon", "", "Images (*.png *.xpm *.jpg)", options=options)
+        if file_path:
+            self.custom_icon_path = file_path
+            self.logger.debug(f"Custom icon uploaded: {self.custom_icon_path}")
+            self._try_load_icon()
+            self.update()  # Force redraw
     
     def boundingRect(self):
         """Return the bounding rectangle of the device."""

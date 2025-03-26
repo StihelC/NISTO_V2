@@ -1,7 +1,8 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLineEdit,
-                           QComboBox, QPushButton, QHBoxLayout, QLabel)
+                           QComboBox, QPushButton, QHBoxLayout, QLabel, QFileDialog)
 from PyQt5.QtCore import Qt
 from constants import DeviceTypes
+import os
 
 class DeviceDialog(QDialog):
     """Dialog for creating or editing a device."""
@@ -12,6 +13,9 @@ class DeviceDialog(QDialog):
         
         # Store the device if editing
         self.device = device
+        
+        # Initialize custom_icon_path for new device creation
+        self.custom_icon_path = None
         
         # Create the UI
         self._create_ui()
@@ -50,6 +54,17 @@ class DeviceDialog(QDialog):
         # Description field
         self.desc_edit = QLineEdit()
         form_layout.addRow("Description:", self.desc_edit)
+        
+        # Custom icon upload button
+        self.icon_label = QLabel("No icon selected")
+        self.upload_icon_button = QPushButton("Upload Custom Icon")
+        self.upload_icon_button.clicked.connect(self.upload_custom_icon)
+        
+        icon_layout = QHBoxLayout()
+        icon_layout.addWidget(self.icon_label)
+        icon_layout.addWidget(self.upload_icon_button)
+        
+        form_layout.addRow("Custom Icon:", icon_layout)
         
         # Add form to main layout
         main_layout.addLayout(form_layout)
@@ -90,6 +105,25 @@ class DeviceDialog(QDialog):
                 self.ip_edit.setText(self.device.properties['ip_address'])
             if 'description' in self.device.properties:
                 self.desc_edit.setText(self.device.properties['description'])
+        
+        # Update custom icon label if there's a custom icon
+        if hasattr(self.device, 'custom_icon_path') and self.device.custom_icon_path:
+            self.custom_icon_path = self.device.custom_icon_path
+            self.icon_label.setText(os.path.basename(self.custom_icon_path))
+    
+    def upload_custom_icon(self):
+        """Open a file dialog to upload a custom icon."""
+        options = QFileDialog.Options()
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select Custom Icon", "", "Images (*.png *.xpm *.jpg)", options=options)
+        if file_path:
+            self.custom_icon_path = file_path
+            self.icon_label.setText(os.path.basename(file_path))
+            
+            # If we're editing an existing device, update it directly
+            if self.device:
+                self.device.custom_icon_path = file_path
+                self.device._try_load_icon()
+                self.device.update()  # Force redraw
     
     def get_name(self):
         """Get the device name from the dialog."""
@@ -108,8 +142,14 @@ class DeviceDialog(QDialog):
     
     def get_device_data(self):
         """Get all device data as a dictionary."""
-        return {
+        data = {
             'name': self.get_name(),
             'type': self.get_type(),
             'properties': self.get_properties()
         }
+        
+        # Add custom icon path if one was selected
+        if self.custom_icon_path:
+            data['custom_icon_path'] = self.custom_icon_path
+            
+        return data

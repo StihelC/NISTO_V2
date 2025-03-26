@@ -15,7 +15,7 @@ from models.connection import Connection
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Device Canvas Application")
+        self.setWindowTitle("NISTO")
         self.setGeometry(100, 100, 800, 600)
 
         # Setup logging
@@ -124,10 +124,6 @@ class MainWindow(QMainWindow):
         show_bounds.triggered.connect(self.show_device_bounds)
         toolbar.addAction(show_bounds)
 
-        test_devices = QAction("Create Test Devices", self)
-        test_devices.triggered.connect(self.create_test_devices)
-        toolbar.addAction(test_devices)
-
         connection_points = QAction("Toggle Connection Points", self)
         connection_points.triggered.connect(lambda: self.toggle_connection_points())
         toolbar.addAction(connection_points)
@@ -171,7 +167,8 @@ class MainWindow(QMainWindow):
             device = Device(
                 device_data['name'],
                 device_data['type'],
-                device_data['properties']
+                device_data['properties'],
+                device_data.get('custom_icon_path')  # Pass the custom_icon_path
             )
             
             # Position the device
@@ -440,97 +437,6 @@ class MainWindow(QMainWindow):
             # Remove from connections list
             if hasattr(self.canvas, "connections") and connection in self.canvas.connections:
                 self.canvas.connections.remove(connection)
-
-    def test_connection_line(self):
-        """Test the temporary connection line display."""
-        # Check if we have devices to work with
-        if not self.canvas.devices:
-            self.logger.warning("No devices available for testing connection line")
-            return
-        
-        # Get scene and first device position
-        scene = self.canvas.scene()
-        start_pos = self.canvas.devices[0].pos()
-        
-        # Create a temporary line
-        temp_line = QGraphicsLineItem(start_pos.x(), start_pos.y(), start_pos.x(), start_pos.y())
-        
-        # Style the line
-        pen = QPen(QColor(0, 120, 215), 2, Qt.DashLine)
-        pen.setDashPattern([5, 5])
-        pen.setCapStyle(Qt.RoundCap)
-        temp_line.setPen(pen)
-        temp_line.setZValue(1000)
-        
-        # Add to scene
-        scene.addItem(temp_line)
-        
-        self.logger.info(f"Created test line starting at {start_pos.x()}, {start_pos.y()}")
-        
-        # Set up animation
-        self.animation_counter = 0
-        self.animation_timer = QTimer()
-        
-        def animate_line():
-            self.animation_counter += 1
-            angle = self.animation_counter / 30.0 * math.pi
-            
-            # Move endpoint in a circle
-            radius = 100
-            end_x = start_pos.x() + radius * math.cos(angle)
-            end_y = start_pos.y() + radius * math.sin(angle)
-            
-            # Update line
-            temp_line.setLine(start_pos.x(), start_pos.y(), end_x, end_y)
-            
-            # Stop after completing a circle
-            if self.animation_counter >= 60:  # ~360 degrees
-                self.animation_timer.stop()
-                scene.removeItem(temp_line)
-                self.logger.info("Test line animation completed")
-        
-        # Start animation
-        self.animation_timer.timeout.connect(animate_line)
-        self.animation_timer.start(50)  # 50ms interval
-
-    def create_test_devices(self):
-        """Create test devices for debugging connection mode."""
-        from models.device import Device
-        from constants import DeviceTypes
-        from PyQt5.QtCore import QPointF
-        
-        # Clear existing devices first
-        for device in list(self.canvas.devices):
-            self.canvas.scene().removeItem(device)
-        self.canvas.devices.clear()
-        
-        # Create two test devices at known positions
-        positions = [
-            QPointF(-100, 0),   # Left
-            QPointF(100, 0)     # Right
-        ]
-        
-        device_types = [DeviceTypes.ROUTER, DeviceTypes.SWITCH]
-        
-        for i, (pos, dev_type) in enumerate(zip(positions, device_types)):
-            device_name = f"TestDevice{i}"
-            device = Device(device_name, dev_type)
-            device.setPos(pos)
-            
-            # Make sure it's selectable
-            device.setFlag(QGraphicsItem.ItemIsSelectable, True)
-            device.setFlag(QGraphicsItem.ItemIsMovable, True)
-            
-            # Add to scene
-            self.canvas.scene().addItem(device)
-            self.canvas.devices.append(device)
-            
-            self.logger.info(f"Created test device: {device_name} at {pos.x()}, {pos.y()}")
-        
-        # Switch to connection mode
-        from constants import Modes
-        self.set_mode(Modes.ADD_CONNECTION)
-        self.logger.info("Switched to connection mode")
 
     def show_device_bounds(self):
         """Show the bounding rectangles of all devices for debugging."""
