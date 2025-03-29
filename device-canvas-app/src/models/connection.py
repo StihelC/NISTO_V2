@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QGraphicsLineItem, QGraphicsPathItem, QGraphicsTextItem, QGraphicsItem
+from PyQt5.QtWidgets import QGraphicsLineItem, QGraphicsPathItem, QGraphicsTextItem, QGraphicsItem, QMenu, QAction
 from PyQt5.QtGui import QPen, QColor, QPainterPath, QFont, QBrush
 from PyQt5.QtCore import Qt, QPointF, pyqtSignal, QObject, QRectF
 import uuid
@@ -9,6 +9,68 @@ class ConnectionSignals(QObject):
     selected = pyqtSignal(object)  # connection
     deleted = pyqtSignal(object)   # connection
     updated = pyqtSignal(object)   # connection
+
+class EditableTextItem(QGraphicsTextItem):
+    """A text item that can be edited and sends signals when editing finishes."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setTextInteractionFlags(Qt.TextEditorInteraction)
+        self.setFlag(QGraphicsItem.ItemIsFocusable, True)
+        self.editing = False
+        
+        # Background appearance
+        self.background_color = QColor(255, 255, 255, 220)  # Slightly transparent white
+        self.background_padding = 4  # Padding around text
+        
+    def paint(self, painter, option, widget):
+        """Paint a background rect behind the text."""
+        # Draw background rectangle
+        painter.save()
+        painter.setBrush(self.background_color)
+        painter.setPen(Qt.NoPen)  # No border for the background
+        
+        # Get text rect with padding
+        rect = self.boundingRect()
+        bg_rect = rect.adjusted(
+            -self.background_padding, 
+            -self.background_padding, 
+            self.background_padding, 
+            self.background_padding
+        )
+        
+        # Draw rounded rectangle
+        painter.drawRoundedRect(bg_rect, 3, 3)
+        painter.restore()
+        
+        # Draw the text
+        super().paint(painter, option, widget)
+    
+    # Cache the bounding rect for more efficient updates    
+    def boundingRect(self):
+        rect = super().boundingRect()
+        # Include the background padding in the bounding rect
+        return rect.adjusted(
+            -self.background_padding, 
+            -self.background_padding, 
+            self.background_padding, 
+            self.background_padding
+        )
+        
+    def focusOutEvent(self, event):
+        """Finish editing when focus is lost."""
+        self.editing = False
+        if self.parentItem() and hasattr(self.parentItem(), 'on_label_edited'):
+            self.parentItem().on_label_edited(self.toPlainText())
+        super().focusOutEvent(event)
+        
+    def keyPressEvent(self, event):
+        """Handle Enter key to finish editing."""
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            self.clearFocus()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 class Connection(QGraphicsPathItem):
     """A connection between two devices."""
@@ -42,7 +104,7 @@ class Connection(QGraphicsPathItem):
         
         # Set connection properties
         self.connection_type = connection_type or ConnectionTypes.ETHERNET
-        self.label_text = label or ""
+        self.label_text = label or "Link"  # Default label text
         self.bandwidth = ""
         self.latency = ""
         
@@ -57,27 +119,57 @@ class Connection(QGraphicsPathItem):
         # Set style based on connection type
         self.set_style_for_type(self.connection_type)
         
-        # Create label if text provided
+        # Always create a label (with default text if none provided)
         self.label = None
-        if self.label_text:
-            self.create_label()
+        self.create_label()
             
         # Update path
         self.update_path()
         
-        # Make selectable
+        # Make selectable and ensure it accepts mouse events
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.ItemIsFocusable, True)  # Can receive keyboard focus
+        self.setAcceptHoverEvents(True)  # Will receive hover events
+        self.setAcceptedMouseButtons(Qt.LeftButton | Qt.RightButton)  # Accept mouse buttons
         
         # Connect to device position changes
         self._connect_to_device_changes()
     
     def _connect_to_device_changes(self):
-        """Connect to device position changes to update connection path."""
-        # This requires devices to emit signals when they move
-        if hasattr(self.source_device, 'signals') and hasattr(self.source_device.signals, 'moved'):
-            self.source_device.signals.moved.connect(self.update_path)
-        if hasattr(self.target_device, 'signals') and hasattr(self.target_device.signals, 'moved'):
-            self.target_device.signals.moved.connect(self.update_path)
+        """Connect to device signals to update when devices move."""
+        if self.source_device and hasattr(self.source_device, 'signals'):
+            if hasattr(self.source_device.signals, 'moved'):
+                self.source_device.signals.moved.connect(self._on_device_moved)
+        
+        if self.target_device and hasattr(self.target_device, 'signals'):
+            if hasattr(self.target_device.signals, 'moved'):
+                self.target_device.signals.moved.connect(self._on_device_moved)
+
+    def _on_device_moved(self, device):
+        """Handle device movement by updating the connection path."""
+        # Capture the old bounding rect before update
+        old_rect = self.boundingRect()
+        if self.label:
+            old_rect = old_rect.united(
+                self.label.boundingRect().adjusted(
+                    -self.label.background_padding*2,
+                    -self.label.background_padding*2,
+                    self.label.background_padding*2,
+                    self.label.background_padding*2
+                ).translated(self.label.pos())
+            )
+        
+        # Update the path
+        self.update_path()
+        
+        # Make sure we update the scene with both old and new areas
+        if self.scene():
+            scene_rect = self.mapToScene(old_rect).boundingRect().united(
+                self.mapToScene(self.boundingRect()).boundingRect()
+            )
+            # Add some margin
+            scene_rect.adjust(-5, -5, 5, 5)
+            self.scene().update(scene_rect)
     
     def _find_best_port(self, from_device, to_device):
         """Find the best connection port on from_device facing to_device."""
@@ -142,9 +234,8 @@ class Connection(QGraphicsPathItem):
         # Set the path
         self.setPath(path)
         
-        # Update label position if needed
-        if self.label:
-            self._update_label_position()
+        # Always update label position when path changes
+        self._update_label_position()
     
     def _update_label_position(self):
         """Place label at center of connection."""
@@ -155,9 +246,18 @@ class Connection(QGraphicsPathItem):
         path_length = self.path().length()
         center_point = self.path().pointAtPercent(0.5)
         
-        # Position label slightly above the path
-        label_offset = QPointF(-self.label.boundingRect().width()/2, -self.label.boundingRect().height())
-        self.label.setPos(center_point + label_offset)
+        # Position the label precisely at the center
+        label_width = self.label.boundingRect().width()
+        label_height = self.label.boundingRect().height()
+        
+        self.label.setPos(
+            center_point.x() - label_width/2,
+            center_point.y() - label_height/2
+        )
+        
+        # Only show editing UI when editing
+        if not getattr(self.label, 'editing', False):
+            self.label.setTextInteractionFlags(Qt.NoTextInteraction)
     
     def set_style_for_type(self, connection_type):
         """Set the visual style based on the connection type."""
@@ -209,14 +309,34 @@ class Connection(QGraphicsPathItem):
     def create_label(self):
         """Create a text label for the connection."""
         if not self.label:
-            self.label = QGraphicsTextItem(self)
+            self.label = EditableTextItem(self)
             self.label.setPlainText(self.label_text)
+            
+            # Make the label more visible with a better background
+            self.label.setDefaultTextColor(QColor(0, 0, 0))
+            font = QFont()
+            font.setBold(True)
+            self.label.setFont(font)
+            
+            # Set background color with higher opacity for better visibility
+            self.label.background_color = QColor(255, 255, 255, 220)
+            self.label.background_padding = 5  # More padding around text
             
             # Set Z-value to be above the connection line
             self.label.setZValue(self.zValue() + 1)
             
             # Update position
             self._update_label_position()
+    
+    def on_label_edited(self, new_text):
+        """Called when the label editing is finished."""
+        if new_text != self.label_text:
+            self.label_text = new_text
+            self._update_label_position()  # Recenter based on new text size
+            
+            # If there's a signal for connection changes, emit it
+            if hasattr(self.signals, 'changed'):
+                self.signals.changed.emit(self)
     
     def set_routing_style(self, style):
         """Set the routing style (straight, orthogonal, curved)."""
@@ -259,6 +379,12 @@ class Connection(QGraphicsPathItem):
         self._apply_style()
         super().hoverLeaveEvent(event)
     
+    def mouseDoubleClickEvent(self, event):
+        """Allow editing the label text on double-click."""
+        # Always start editing the label on double-click anywhere on the connection
+        self._start_label_editing()
+        super().mouseDoubleClickEvent(event)
+    
     def delete(self):
         """Remove this connection."""
         # Disconnect from devices
@@ -274,3 +400,47 @@ class Connection(QGraphicsPathItem):
         # Remove from scene
         if self.scene():
             self.scene().removeItem(self)
+    
+    def contextMenuEvent(self, event):
+        """Show context menu on right-click."""
+        menu = QMenu()
+        
+        # Add "Edit Label" action
+        edit_action = QAction("Edit Label", self.scene().views()[0])
+        edit_action.triggered.connect(self._start_label_editing)
+        menu.addAction(edit_action)
+        
+        # Add other possible actions
+        delete_action = QAction("Delete Connection", self.scene().views()[0])
+        delete_action.triggered.connect(self._delete_connection)
+        menu.addAction(delete_action)
+        
+        # Show the menu at the event position
+        menu.exec_(event.screenPos())
+    
+    def _start_label_editing(self):
+        """Start editing the connection label."""
+        if self.label:
+            self.label.editing = True
+            self.label.setTextInteractionFlags(Qt.TextEditorInteraction)
+            self.label.setFocus()
+    
+    def _delete_connection(self):
+        """Delete this connection."""
+        # Disconnect from device signals
+        if self.source_device and hasattr(self.source_device, 'signals'):
+            if hasattr(self.source_device.signals, 'moved'):
+                self.source_device.signals.moved.disconnect(self._on_device_moved)
+        
+        if self.target_device and hasattr(self.target_device, 'signals'):
+            if hasattr(self.target_device.signals, 'moved'):
+                self.target_device.signals.moved.disconnect(self._on_device_moved)
+        
+        # Remove from scene
+        if self.scene():
+            self.scene().removeItem(self)
+            
+            # Notify the canvas that a connection was deleted (if signal exists)
+            for view in self.scene().views():
+                if hasattr(view, 'connection_deleted'):
+                    view.connection_deleted.emit(self)

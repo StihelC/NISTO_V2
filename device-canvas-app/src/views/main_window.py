@@ -142,6 +142,18 @@ class MainWindow(QMainWindow):
         connection_style_btn.setMenu(self.create_connection_style_menu())
         toolbar.addWidget(connection_style_btn)
 
+        # Add file operations
+        file_toolbar = QToolBar("File Operations")
+        self.addToolBar(file_toolbar)
+        
+        save_action = QAction("Save Canvas", self)
+        save_action.triggered.connect(self.save_canvas)
+        file_toolbar.addAction(save_action)
+        
+        load_action = QAction("Load Canvas", self)
+        load_action.triggered.connect(self.load_canvas)
+        file_toolbar.addAction(load_action)
+
     def set_mode(self, mode):
         """Set the current interaction mode."""
         self.canvas.set_mode(mode)
@@ -566,3 +578,23 @@ class MainWindow(QMainWindow):
             Connection.STYLE_CURVED: "Curved"
         }
         self.logger.info(f"Connection style set to: {style_names.get(style, 'Unknown')}")
+
+    def save_canvas(self):
+        """Save the current canvas to a file."""
+        from views.file_dialog import SaveCanvasDialog
+        
+        success, message = SaveCanvasDialog.save_canvas(self, self.canvas)
+        if success:
+            self.logger.info("Canvas saved successfully")
+        else:
+            self.logger.warning(f"Canvas save failed: {message}")
+
+    def load_canvas(self):
+        """Load a canvas from a file."""
+        from views.file_dialog import LoadCanvasDialog
+        
+        success, message = LoadCanvasDialog.load_canvas(self, self.canvas)
+        if success:
+            self.logger.info("Canvas loaded successfully")
+        else:
+            self.logger.warning(f"Canvas load failed: {message}")
