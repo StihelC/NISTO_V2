@@ -95,6 +95,12 @@ class Connection(QGraphicsPathItem):
         self.source_device = source_device
         self.target_device = target_device
         
+        # Register this connection with the devices
+        if hasattr(source_device, 'add_connection'):
+            source_device.add_connection(self)
+        if hasattr(target_device, 'add_connection'):
+            target_device.add_connection(self)
+        
         # Generate a unique ID
         self.id = str(uuid.uuid4())
         
@@ -310,6 +316,8 @@ class Connection(QGraphicsPathItem):
         """Create a text label for the connection."""
         if not self.label:
             self.label = EditableTextItem(self)
+            
+            # Use the stored label text, not a default value
             self.label.setPlainText(self.label_text)
             
             # Make the label more visible with a better background
@@ -327,6 +335,8 @@ class Connection(QGraphicsPathItem):
             
             # Update position
             self._update_label_position()
+            
+            print(f"Created label with text: '{self.label_text}'")
     
     def on_label_edited(self, new_text):
         """Called when the label editing is finished."""
@@ -389,10 +399,12 @@ class Connection(QGraphicsPathItem):
         """Remove this connection."""
         # Disconnect from devices
         if self.source_device:
-            self.source_device.remove_connection(self)
+            if hasattr(self.source_device, 'remove_connection'):
+                self.source_device.remove_connection(self)
         
         if self.target_device:
-            self.target_device.remove_connection(self)
+            if hasattr(self.target_device, 'remove_connection'):
+                self.target_device.remove_connection(self)
         
         # Emit signal before removal
         self.signals.deleted.emit(self)

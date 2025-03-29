@@ -306,6 +306,8 @@ class CanvasSerializer:
             connection_type = data.get('connection_type')
             label_text = data.get('label_text', '')
             
+            print(f"Deserializing connection with label_text: '{label_text}'")
+            
             connection = Connection(source_device, target_device, connection_type, label_text)
             
             # Set ID if present
@@ -315,6 +317,7 @@ class CanvasSerializer:
             # Set properties
             connection.bandwidth = data.get('bandwidth', '')
             connection.latency = data.get('latency', '')
+            connection.label_text = label_text  # Explicitly set again to ensure it's set
             
             # Set style properties
             routing_style = data.get('routing_style')
@@ -343,13 +346,23 @@ class CanvasSerializer:
                 canvas.connections = []
             canvas.connections.append(connection)
             
+            # IMPORTANT: Remove any existing label first to avoid conflicts
+            if hasattr(connection, 'label') and connection.label is not None:
+                connection.label.setParentItem(None)  # Detach from connection
+                if connection.scene():
+                    connection.scene().removeItem(connection.label)
+                connection.label = None
+            
             # Create label if needed - force it to be created and positioned
             if label_text:
-                if connection.label is None:
-                    connection.create_label()
-                else:
-                    connection.label.setPlainText(label_text)
+                print(f"Creating label with text: '{label_text}'")
+                connection.create_label()
                 
+                # Make sure the label text is set correctly
+                if connection.label:
+                    connection.label.setPlainText(label_text)
+                    connection.label_text = label_text  # Ensure this is set correctly
+                    
                 # Force label to be positioned properly
                 connection._update_label_position()
             
@@ -358,6 +371,8 @@ class CanvasSerializer:
             
             # Force update the path
             connection.update_path()
+            
+            print(f"Connection created with label_text: '{connection.label_text}'")
             
             return connection
             

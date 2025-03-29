@@ -97,6 +97,9 @@ class Device(QGraphicsItem):
         # Track connection points visibility
         self._show_connection_points = False
         
+        # List of connections attached to this device
+        self.connections = []
+        
         # Create child items
         self._create_visuals()
     
@@ -329,6 +332,16 @@ class Device(QGraphicsItem):
         else:
             # Store in properties dict
             self.properties[name] = value
+    
+    def add_connection(self, connection):
+        """Add a connection to this device's connections list."""
+        if connection not in self.connections:
+            self.connections.append(connection)
+    
+    def remove_connection(self, connection):
+        """Remove a connection from this device's connections list."""
+        if connection in self.connections:
+            self.connections.remove(connection)
     
     def itemChange(self, change, value):
         """Handle item changes."""
