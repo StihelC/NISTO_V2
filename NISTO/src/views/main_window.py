@@ -62,6 +62,9 @@ class MainWindow(QMainWindow):
         # Create edit menu with clipboard actions
         self._create_edit_menu()
         
+        # Create view menu
+        self._create_view_menu()
+        
         # Set up keyboard shortcuts
         self._setup_shortcuts()
         
@@ -115,6 +118,33 @@ class MainWindow(QMainWindow):
         paste_action.setShortcut("Ctrl+V")
         paste_action.triggered.connect(self.clipboard_manager.paste)
         edit_menu.addAction(paste_action)
+    
+    def _create_view_menu(self):
+        """Create the View menu."""
+        view_menu = self.menuBar().addMenu("&View")
+        
+        # Zoom In action - Fix shortcut
+        zoom_in_action = QAction("Zoom In", self)
+        # Using equals sign for plus to avoid issues with Qt shortcut parsing
+        zoom_in_action.setShortcut("Ctrl+=")  # This works for both Ctrl++ and Ctrl+=
+        zoom_in_action.triggered.connect(self.canvas.zoom_in)
+        view_menu.addAction(zoom_in_action)
+        
+        # Zoom Out action
+        zoom_out_action = QAction("Zoom Out", self)
+        zoom_out_action.setShortcut("Ctrl+-")
+        zoom_out_action.triggered.connect(self.canvas.zoom_out)
+        view_menu.addAction(zoom_out_action)
+        
+        # Reset Zoom action
+        reset_zoom_action = QAction("Reset Zoom", self)
+        reset_zoom_action.setShortcut("Ctrl+0")
+        reset_zoom_action.triggered.connect(self.canvas.reset_zoom)
+        view_menu.addAction(reset_zoom_action)  # FIX: This was a bug - should be reset_zoom_action
+        
+        view_menu.addSeparator()
+        
+        return view_menu
     
     def _setup_shortcuts(self):
         """Set up additional keyboard shortcuts."""

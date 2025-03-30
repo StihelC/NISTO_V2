@@ -600,6 +600,24 @@ class Canvas(QGraphicsView):
         
         # Set initial mode
         self.set_mode(Modes.SELECT)
+        
+        # Initialize zoom settings
+        self.zoom_factor = 1.15  # Zoom in/out factor per step
+        self.min_zoom = 0.1     # Minimum zoom level
+        self.max_zoom = 5.0     # Maximum zoom level
+        self.current_zoom = 1.0  # Current zoom level
+        
+        # Enable mouse tracking and wheel events
+        self.setMouseTracking(True)
+        self.setDragMode(QGraphicsView.RubberBandDrag)
+        
+        # Set rendering quality
+        self.setRenderHint(QPainter.Antialiasing)
+        self.setRenderHint(QPainter.TextAntialiasing)
+        self.setRenderHint(QPainter.SmoothPixmapTransform)
+        
+        # Set viewport update mode to get smoother updates
+        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
     
     def _setup_modes(self):
         """Initialize all available interaction modes."""
@@ -870,4 +888,104 @@ class Canvas(QGraphicsView):
         menu.addSeparator()
         delete_action = menu.addAction("Delete Connection")
         delete_action.triggered.connect(lambda: self.delete_connection_requested.emit(connection))
+    
+    def wheelEvent(self, event):
+        """Handle mouse wheel events for zooming."""
+        # Get the current position of the mouse in scene coordinates
+        mouse_pos = self.mapToScene(event.pos())
+        
+        # Calculate zoom factor based on wheel direction
+        zoom_direction = 1 if event.angleDelta().y() > 0 else -1
+        zoom_step = self.zoom_factor ** zoom_direction
+        
+        # Calculate new zoom level
+        new_zoom = self.current_zoom * zoom_step
+        
+        # Enforce zoom limits
+        if new_zoom < self.min_zoom:
+            zoom_step = self.min_zoom / self.current_zoom
+            new_zoom = self.min_zoom
+        elif new_zoom > self.max_zoom:
+            zoom_step = self.max_zoom / self.current_zoom
+            new_zoom = self.max_zoom
+        
+        # Update current zoom level
+        self.current_zoom = new_zoom
+        
+        # Scale the view
+        self.scale(zoom_step, zoom_step)
+        
+        # Adjust the scene position to keep the mouse cursor in the same position
+        new_pos = self.transform().map(mouse_pos)
+        delta = new_pos - event.pos()
+        self.translate(delta.x(), delta.y())
+        
+        # Log the zoom level
+        self.logger.debug(f"Zoom level: {new_zoom:.2f}")
+        
+        # Update the view
+        self.update()
+    
+    def zoom_in(self):
+        """Zoom in on the canvas by a fixed step."""
+        # Calculate new zoom level
+        zoom_step = self.zoom_factor
+        new_zoom = self.current_zoom * zoom_step
+        
+        # Enforce zoom limit
+        if new_zoom > self.max_zoom:
+            zoom_step = self.max_zoom / self.current_zoom
+            new_zoom = self.max_zoom
+        
+        # Update current zoom level
+        self.current_zoom = new_zoom
+        
+        # Apply zoom using scale
+        self.scale(zoom_step, zoom_step)
+        
+        # Log the zoom level
+        self.logger.debug(f"Zoom in: {new_zoom:.2f}")
+        
+        # Update the view
+        self.update()
+    
+    def zoom_out(self):
+        """Zoom out on the canvas by a fixed step."""
+        # Calculate new zoom level
+        zoom_step = 1.0 / self.zoom_factor
+        new_zoom = self.current_zoom * zoom_step
+        
+        # Enforce zoom limit
+        if new_zoom < self.min_zoom:
+            zoom_step = self.min_zoom / self.current_zoom
+            new_zoom = self.min_zoom
+        
+        # Update current zoom level
+        self.current_zoom = new_zoom
+        
+        # Apply zoom using scale
+        self.scale(zoom_step, zoom_step)
+        
+        # Log the zoom level
+        self.logger.debug(f"Zoom out: {new_zoom:.2f}")
+        
+        # Update the view
+        self.update()
+    
+    def reset_zoom(self):
+        """Reset zoom level to 100%."""
+        # Calculate zoom step to get back to 1.0
+        zoom_step = 1.0 / self.current_zoom
+        
+        # Update current zoom level
+        self.current_zoom = 1.0
+        
+        # Apply zoom using scale
+        self.scale(zoom_step, zoom_step)
+        
+        # Log the zoom level
+        self.logger.debug("Zoom reset to 1.0")
+        
+        # Update the view
+        self.update()
 

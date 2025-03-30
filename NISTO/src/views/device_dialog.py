@@ -1,7 +1,8 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLineEdit,
-                           QComboBox, QPushButton, QHBoxLayout, QLabel, QFileDialog)
+                           QComboBox, QPushButton, QHBoxLayout, QLabel, QFileDialog,
+                           QSpinBox, QCheckBox, QGroupBox)
 from PyQt5.QtCore import Qt
-from constants import DeviceTypes
+from constants import DeviceTypes, ConnectionTypes
 import os
 
 class DeviceDialog(QDialog):
@@ -55,6 +56,57 @@ class DeviceDialog(QDialog):
         self.desc_edit = QLineEdit()
         form_layout.addRow("Description:", self.desc_edit)
         
+        # Device multiplier (for creating multiple copies)
+        self.multiplier_spin = QSpinBox()
+        self.multiplier_spin.setMinimum(1)
+        self.multiplier_spin.setMaximum(100)
+        self.multiplier_spin.setValue(1)
+        self.multiplier_spin.setToolTip("Number of devices to create (arranged in a grid)")
+        # Only enable multiplier for new devices, not when editing
+        self.multiplier_spin.setEnabled(self.device is None)
+        form_layout.addRow("Quantity:", self.multiplier_spin)
+        
+        # Connection options for multiple devices
+        self.connection_group = QGroupBox("Connection Options")
+        self.connection_group.setEnabled(self.device is None)
+        connection_layout = QVBoxLayout()
+        
+        # Checkbox to enable connections between devices
+        self.connect_devices_check = QCheckBox("Connect devices to each other")
+        self.connect_devices_check.setChecked(False)
+        self.connect_devices_check.toggled.connect(self._toggle_connection_options)
+        connection_layout.addWidget(self.connect_devices_check)
+        
+        # Connection type options
+        connection_type_layout = QFormLayout()
+        self.connection_type_combo = QComboBox()
+        
+        # Add connection types from constants
+        for conn_type, display_name in ConnectionTypes.DISPLAY_NAMES.items():
+            self.connection_type_combo.addItem(display_name, conn_type)
+        
+        # Connect signal to update label when type changes
+        self.connection_type_combo.currentIndexChanged.connect(self._update_connection_label)
+        
+        connection_type_layout.addRow("Connection Type:", self.connection_type_combo)
+        
+        # Label for connections
+        self.connection_label_edit = QLineEdit()
+        # Initialize with the current connection type's display name
+        self._update_connection_label()
+        connection_type_layout.addRow("Connection Label:", self.connection_label_edit)
+        
+        # Add connection type options to layout
+        connection_layout.addLayout(connection_type_layout)
+        self.connection_group.setLayout(connection_layout)
+        
+        # Initially disable connection type options
+        self._toggle_connection_options(False)
+        
+        # Add connection group to main form
+        main_layout.addLayout(form_layout)
+        main_layout.addWidget(self.connection_group)
+        
         # Custom icon upload button
         self.icon_label = QLabel("No icon selected")
         self.upload_icon_button = QPushButton("Upload Custom Icon")
@@ -65,9 +117,6 @@ class DeviceDialog(QDialog):
         icon_layout.addWidget(self.upload_icon_button)
         
         form_layout.addRow("Custom Icon:", icon_layout)
-        
-        # Add form to main layout
-        main_layout.addLayout(form_layout)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -84,6 +133,29 @@ class DeviceDialog(QDialog):
         main_layout.addLayout(button_layout)
         
         self.setLayout(main_layout)
+        
+        # Connect multiplier spin to enable/disable connection options
+        self.multiplier_spin.valueChanged.connect(self._update_connection_group_state)
+    
+    def _toggle_connection_options(self, enabled):
+        """Enable or disable the connection type options."""
+        for i in range(self.connection_group.layout().count()):
+            item = self.connection_group.layout().itemAt(i)
+            if isinstance(item, QFormLayout):
+                for j in range(item.count()):
+                    widget = item.itemAt(j).widget()
+                    if widget and widget != self.connect_devices_check:
+                        widget.setEnabled(enabled)
+    
+    def _update_connection_group_state(self, value):
+        """Enable connection options only when creating multiple devices."""
+        self.connection_group.setEnabled(value > 1 and self.device is None)
+    
+    def _update_connection_label(self):
+        """Update the label field with the display name of the selected connection type."""
+        conn_type = self.connection_type_combo.currentData()
+        display_name = ConnectionTypes.DISPLAY_NAMES.get(conn_type, "Link")
+        self.connection_label_edit.setText(display_name)
     
     def _populate_from_device(self):
         """Populate dialog fields from an existing device."""
@@ -153,3 +225,27 @@ class DeviceDialog(QDialog):
             data['custom_icon_path'] = self.custom_icon_path
             
         return data
+        
+    def get_multiplier(self):
+        """Get the number of devices to create."""
+        return self.multiplier_spin.value()
+    
+    def should_connect_devices(self):
+        """Check if devices should be connected to each other."""
+        return (self.multiplier_spin.value() > 1 and 
+                self.connect_devices_check.isChecked())
+    
+    def get_connection_data(self):
+        """Get the connection configuration data."""
+        conn_type = self.connection_type_combo.currentData()
+        # Use the display name if no custom label is set or if the label is still "Link"
+        label = self.connection_label_edit.text()
+        if not label or label == "Link":
+            label = ConnectionTypes.DISPLAY_NAMES.get(conn_type, "Link")
+            
+        return {
+            'type': conn_type,
+            'label': label,
+            'bandwidth': ConnectionTypes.DEFAULT_BANDWIDTHS.get(conn_type, ""),
+            'latency': ""
+        }
