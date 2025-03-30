@@ -116,9 +116,9 @@ class MenuManager:
             if style == Connection.STYLE_STRAIGHT:
                 action.setChecked(True)
                 
-            # Connect to style setter
+            # Connect to style setter with explicit lambda to fix scoping issues
             action.triggered.connect(
-                lambda checked, s=style: self.main_window.connection_controller.set_connection_style(s)
+                lambda checked, style_val=style: self.main_window.connection_controller.set_connection_style(style_val)
             )
             
             # Add to group and menu
@@ -131,6 +131,39 @@ class MenuManager:
         connection_style_btn.setPopupMode(QToolButton.InstantPopup)
         connection_style_btn.setMenu(connection_style_menu)
         toolbar.addWidget(connection_style_btn)
+    
+    def _create_connection_menu(self):
+        """Create connection style menu."""
+        connection_menu = self.menuBar().addMenu("&Connection")
+        
+        # Add connection style submenu
+        style_menu = connection_menu.addMenu("Routing Style")
+        
+        # Straight style
+        from models.connection import Connection
+        straight_action = style_menu.addAction("Straight")
+        straight_action.triggered.connect(
+            lambda checked, s=Connection.STYLE_STRAIGHT: self.main_window.connection_controller.set_connection_style(s))
+        
+        # Orthogonal style
+        orthogonal_action = style_menu.addAction("Orthogonal")
+        orthogonal_action.triggered.connect(
+            lambda checked, s=Connection.STYLE_ORTHOGONAL: self.main_window.connection_controller.set_connection_style(s))
+        
+        # Curved style
+        curved_action = style_menu.addAction("Curved")
+        curved_action.triggered.connect(
+            lambda checked, s=Connection.STYLE_CURVED: self.main_window.connection_controller.set_connection_style(s))
+        
+        # Connection appearance submenu
+        appearance_menu = connection_menu.addMenu("Appearance")
+        
+        # Connection type actions that define the visual style
+        from constants import ConnectionTypes
+        for conn_type, display_name in ConnectionTypes.DISPLAY_NAMES.items():
+            type_action = appearance_menu.addAction(display_name)
+            type_action.triggered.connect(
+                lambda checked, t=conn_type: self.main_window.connection_controller.set_connection_type(t))
     
     def update_mode_actions(self, current_mode):
         """Update checked state of mode actions."""

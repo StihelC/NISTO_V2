@@ -303,7 +303,7 @@ class Connection(QGraphicsPathItem):
             path.cubicTo(cp1, cp2, self._target_port)
         
         # Log path creation
-        self.logger.debug(f"Path updated: {path}")
+        self.logger.debug(f"Path updated for routing style: {self.routing_style}")
         
         # Set the path
         self.setPath(path)
@@ -352,6 +352,9 @@ class Connection(QGraphicsPathItem):
     
     def set_style_for_type(self, connection_type):
         """Set the visual style based on the connection type."""
+        # Import constants if needed (in case this method is called directly)
+        from constants import ConnectionTypes
+        
         # Default style
         style = {
             'color': QColor(30, 30, 30),
@@ -395,11 +398,21 @@ class Connection(QGraphicsPathItem):
         elif connection_type == ConnectionTypes.CUSTOM:
             style = {'color': QColor(50, 50, 50), 'style': Qt.SolidLine, 'width': 2}
         
+        # Store current connection type
+        self.connection_type = connection_type
+        
         # Apply style
         self.line_color = style['color']
         self.line_style = style['style']
         self.line_width = style['width']
         self._apply_style()
+        
+        # Update label text to match connection type if needed
+        if hasattr(self, 'label_text'):
+            # Import here to avoid circular import
+            from constants import ConnectionTypes
+            display_name = ConnectionTypes.DISPLAY_NAMES.get(connection_type, "Link")
+            self.label_text = display_name
     
     def _apply_style(self):
         """Apply the current style settings."""
@@ -455,8 +468,17 @@ class Connection(QGraphicsPathItem):
     
     def set_routing_style(self, style):
         """Set the routing style (straight, orthogonal, curved)."""
-        self.routing_style = style
-        self.update_path()
+        self.logger.debug(f"Setting routing style to {style} (was {self.routing_style})")
+        if style != self.routing_style:
+            self.routing_style = style
+            self.update_path()
+            # Update the scene to ensure the change is visible
+            if self.scene():
+                update_rect = self.boundingRect().adjusted(-10, -10, 10, 10)
+                self.scene().update(self.mapToScene(update_rect).boundingRect())
+                # Force update on all views
+                for view in self.scene().views():
+                    view.viewport().update()
     
     def paint(self, painter, option, widget=None):
         """Custom painting."""

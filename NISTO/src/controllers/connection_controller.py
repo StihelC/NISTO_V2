@@ -168,3 +168,55 @@ class ConnectionController:
     def _show_error(self, message):
         """Show error message dialog."""
         QMessageBox.critical(self.canvas.parent(), "Error", message)
+
+    def set_connection_style(self, style):
+        """Set the routing style for selected connections."""
+        selected_connections = [
+            item for item in self.canvas.scene().selectedItems() 
+            if isinstance(item, Connection)
+        ]
+        
+        if not selected_connections:
+            self.logger.info("No connections selected to change style")
+            return
+            
+        self.logger.info(f"Setting connection style to {style} for {len(selected_connections)} connections")
+        
+        # Update style for each selected connection
+        for connection in selected_connections:
+            if hasattr(connection, 'set_routing_style'):
+                connection.set_routing_style(style)
+        
+        # Force a complete update of the canvas
+        self.canvas.viewport().update()
+
+    def set_connection_type(self, connection_type):
+        """Set the connection type and visual appearance for selected connections."""
+        selected_connections = [
+            item for item in self.canvas.scene().selectedItems() 
+            if isinstance(item, Connection)
+        ]
+        
+        if not selected_connections:
+            self.logger.info("No connections selected to change type")
+            return
+            
+        # Get display name for connection type
+        from constants import ConnectionTypes
+        display_name = ConnectionTypes.DISPLAY_NAMES.get(connection_type, "Link")
+            
+        self.logger.info(f"Setting connection type to {display_name} for {len(selected_connections)} connections")
+        
+        # Update type and visual style for each selected connection
+        for connection in selected_connections:
+            connection.connection_type = connection_type
+            
+            # Update the label to show the connection type
+            connection.label_text = display_name
+            
+            # Apply visual style based on type
+            if hasattr(connection, 'set_style_for_type'):
+                connection.set_style_for_type(connection_type)
+                
+        # Force update the view
+        self.canvas.viewport().update()
