@@ -1,6 +1,6 @@
-from PyQt5.QtWidgets import QMainWindow, QDialog, QMessageBox
-from PyQt5.QtCore import QPointF, QTimer
-from PyQt5.QtGui import QColor
+from PyQt5.QtWidgets import QMainWindow, QDialog, QMessageBox, QAction
+from PyQt5.QtCore import QPointF, QTimer, Qt
+from PyQt5.QtGui import QColor  # Removed QKeySequence import as it's not used
 import logging
 
 from .canvas import Canvas
@@ -9,6 +9,7 @@ from controllers.menu_manager import MenuManager
 from controllers.device_controller import DeviceController
 from controllers.connection_controller import ConnectionController
 from controllers.boundary_controller import BoundaryController
+from controllers.clipboard_manager import ClipboardManager
 from utils.event_bus import EventBus
 
 class MainWindow(QMainWindow):
@@ -34,15 +35,59 @@ class MainWindow(QMainWindow):
         self.connection_controller = ConnectionController(self.canvas, self.event_bus)
         self.boundary_controller = BoundaryController(self.canvas, self.event_bus)
         
+        # Initialize clipboard manager
+        self.clipboard_manager = ClipboardManager(
+            self.canvas, 
+            self.device_controller,
+            self.connection_controller,
+            self.event_bus
+        )
+        
         # Create menu manager
         self.menu_manager = MenuManager(self, self.canvas, self.event_bus)
         self.menu_manager.create_toolbar()
+        
+        # Create edit menu with clipboard actions
+        self._create_edit_menu()
+        
+        # Set up keyboard shortcuts
+        self._setup_shortcuts()
         
         # Connect canvas signals to controllers
         self.connect_signals()
         
         # Set initial mode
         self.set_mode(Modes.SELECT)
+
+    def _create_edit_menu(self):
+        """Create the Edit menu with clipboard actions."""
+        edit_menu = self.menuBar().addMenu("Edit")
+        
+        # Cut action
+        cut_action = QAction("Cut", self)
+        cut_action.setShortcut("Ctrl+X")
+        cut_action.triggered.connect(self.clipboard_manager.cut_selected)
+        edit_menu.addAction(cut_action)
+        
+        # Copy action
+        copy_action = QAction("Copy", self)
+        copy_action.setShortcut("Ctrl+C")
+        copy_action.triggered.connect(self.clipboard_manager.copy_selected)
+        edit_menu.addAction(copy_action)
+        
+        # Paste action
+        paste_action = QAction("Paste", self)
+        paste_action.setShortcut("Ctrl+V")
+        paste_action.triggered.connect(self.clipboard_manager.paste)
+        edit_menu.addAction(paste_action)
+    
+    def _setup_shortcuts(self):
+        """Set up additional keyboard shortcuts."""
+        # These shortcuts work globally in the main window
+        
+        # Delete key for deleting selected items
+        # This function is already handled by the canvas and mode system
+        pass
 
     def connect_signals(self):
         """Connect canvas signals to appropriate controller handlers."""
@@ -66,6 +111,28 @@ class MainWindow(QMainWindow):
         if item:
             self.logger.info(f"Deleting item of type {type(item).__name__}")
             self.canvas.scene().removeItem(item)
+    
+    def keyPressEvent(self, event):
+        """Handle key press events."""
+        # Let the canvas and its modes handle the key first
+        if self.canvas.scene().focusItem():
+            # If an item has focus, let Qt's standard event handling work
+            super().keyPressEvent(event)
+            return
+            
+        # Handle keyboard shortcuts using key combinations directly
+        if event.key() == Qt.Key_C and event.modifiers() & Qt.ControlModifier:
+            self.clipboard_manager.copy_selected()
+            event.accept()
+        elif event.key() == Qt.Key_V and event.modifiers() & Qt.ControlModifier:
+            self.clipboard_manager.paste()
+            event.accept()
+        elif event.key() == Qt.Key_X and event.modifiers() & Qt.ControlModifier:
+            self.clipboard_manager.cut_selected()
+            event.accept()
+        else:
+            # Pass to parent for default handling
+            super().keyPressEvent(event)
     
     def save_canvas(self):
         """Save the current canvas to a file."""

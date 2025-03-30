@@ -28,6 +28,11 @@ class MenuManager:
         
         toolbar.addSeparator()
         
+        # Add clipboard actions
+        self._create_clipboard_actions(toolbar)
+        
+        toolbar.addSeparator()
+        
         # Add connection style menu/button
         self._create_connection_style_menu(toolbar)
         
@@ -65,6 +70,26 @@ class MenuManager:
             
         # Set default mode
         self.mode_actions[Modes.SELECT].setChecked(True)
+    
+    def _create_clipboard_actions(self, toolbar):
+        """Create clipboard actions for the toolbar."""
+        # Copy action
+        copy_action = QAction("Copy", self.main_window)
+        copy_action.setShortcut("Ctrl+C")
+        copy_action.triggered.connect(self.main_window.clipboard_manager.copy_selected)
+        toolbar.addAction(copy_action)
+        
+        # Cut action
+        cut_action = QAction("Cut", self.main_window)
+        cut_action.setShortcut("Ctrl+X")
+        cut_action.triggered.connect(self.main_window.clipboard_manager.cut_selected)
+        toolbar.addAction(cut_action)
+        
+        # Paste action
+        paste_action = QAction("Paste", self.main_window)
+        paste_action.setShortcut("Ctrl+V")
+        paste_action.triggered.connect(self.main_window.clipboard_manager.paste)
+        toolbar.addAction(paste_action)
     
     def _create_connection_style_menu(self, toolbar):
         """Create connection style menu and button."""
