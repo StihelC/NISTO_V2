@@ -47,6 +47,9 @@ class MainWindow(QMainWindow):
         self.menu_manager = MenuManager(self, self.canvas, self.event_bus)
         self.menu_manager.create_toolbar()
         
+        # Create file menu with save/load actions
+        self._create_file_menu()
+        
         # Create edit menu with clipboard actions
         self._create_edit_menu()
         
@@ -58,6 +61,29 @@ class MainWindow(QMainWindow):
         
         # Set initial mode
         self.set_mode(Modes.SELECT)
+
+    def _create_file_menu(self):
+        """Create the File menu with save/load actions."""
+        file_menu = self.menuBar().addMenu("File")
+        
+        # Save canvas action
+        save_action = QAction("Save Canvas", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self.save_canvas)
+        file_menu.addAction(save_action)
+        
+        # Load canvas action
+        load_action = QAction("Load Canvas", self)
+        load_action.setShortcut("Ctrl+O")
+        load_action.triggered.connect(self.load_canvas)
+        file_menu.addAction(load_action)
+        
+        # Exit action
+        file_menu.addSeparator()
+        exit_action = QAction("Exit", self)
+        exit_action.setShortcut("Alt+F4")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
 
     def _create_edit_menu(self):
         """Create the Edit menu with clipboard actions."""
