@@ -8,6 +8,7 @@ class Modes:
     SELECT = "select"
     ADD_DEVICE = "add_device"
     DELETE = "delete"
+    DELETE_SELECTED = "delete_selected"
     ADD_BOUNDARY = "add_boundary" 
     ADD_CONNECTION = "add_connection"
 

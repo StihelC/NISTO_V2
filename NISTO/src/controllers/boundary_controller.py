@@ -27,8 +27,13 @@ class BoundaryController:
         if boundary:
             self.logger.info(f"Deleting boundary '{boundary.name}'")
             
-            # Use the boundary's delete method to ensure label is removed too
-            boundary.delete()
+            # Use the boundary's delete method to ensure label is properly removed
+            if hasattr(boundary, 'delete'):
+                boundary.delete()
+            else:
+                # Fallback if delete method not available
+                if hasattr(boundary, 'label') and boundary.label:
+                    self.canvas.scene().removeItem(boundary.label)
             
             # Remove from scene
             self.canvas.scene().removeItem(boundary)

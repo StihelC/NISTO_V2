@@ -53,6 +53,10 @@ class DeviceController:
         if device:
             self.logger.info(f"Deleting device '{device.name}' (ID: {device.id})")
             
+            # Use the device's delete method if available
+            if hasattr(device, 'delete'):
+                device.delete()
+            
             # Remove from scene
             self.canvas.scene().removeItem(device)
             
@@ -62,6 +66,9 @@ class DeviceController:
                 
             # Notify through event bus
             self.event_bus.emit("device_deleted", device)
+            
+            # Force a complete viewport update
+            self.canvas.viewport().update()
     
     def _create_device(self, name, device_type, position, properties=None, custom_icon_path=None):
         """Create a device and add it to the canvas."""

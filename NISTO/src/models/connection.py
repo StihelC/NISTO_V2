@@ -417,6 +417,16 @@ class Connection(QGraphicsPathItem):
     
     def delete(self):
         """Remove this connection."""
+        # Store scene and path for later update
+        scene = self.scene()
+        path_rect = self.boundingRect()
+        scene_path = self.mapToScene(path_rect).boundingRect().adjusted(-20, -20, 20, 20)
+        
+        # If we have a label, include its area in the update region
+        if self.label and self.label.scene():
+            label_rect = self.label.sceneBoundingRect()
+            scene_path = scene_path.united(label_rect.adjusted(-5, -5, 5, 5))
+        
         # Disconnect from devices
         if self.source_device:
             if hasattr(self.source_device, 'remove_connection'):
@@ -429,9 +439,20 @@ class Connection(QGraphicsPathItem):
         # Emit signal before removal
         self.signals.deleted.emit(self)
         
+        # Remove the label first to avoid dangling references
+        if self.label and self.label.scene():
+            scene.removeItem(self.label)
+        
         # Remove from scene
-        if self.scene():
-            self.scene().removeItem(self)
+        if scene:
+            scene.removeItem(self)
+            
+            # Force update the affected area
+            scene.update(scene_path)
+            
+            # Update all connected views
+            for view in scene.views():
+                view.viewport().update()
     
     def contextMenuEvent(self, event):
         """Show context menu on right-click."""

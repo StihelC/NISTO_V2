@@ -170,3 +170,32 @@ class Boundary(QGraphicsRectItem):
         self.setRect(rect)
         self._update_label_position()
     
+    def delete(self):
+        """Clean up resources before deletion."""
+        # Store scene and rect before removal for updating
+        scene = self.scene()
+        update_rect = self.sceneBoundingRect().adjusted(-10, -10, 10, 10)
+        
+        # Remove the label first if it exists
+        if hasattr(self, 'label') and self.label:
+            if self.label.scene():
+                # Include label area in update region
+                if hasattr(self.label, 'boundingRect'):
+                    label_rect = self.label.sceneBoundingRect()
+                    update_rect = update_rect.united(label_rect)
+                self.scene().removeItem(self.label)
+            self.label = None
+            
+        # Emit signals or perform additional cleanup if needed
+        if hasattr(self, 'signals'):
+            # You might want to add a deleted signal in BoundarySignals class
+            if hasattr(self.signals, 'deleted'):
+                self.signals.deleted.emit(self)
+        
+        # Force update the scene area after deletion
+        if scene:
+            scene.update(update_rect)
+            # Force update on all views
+            for view in scene.views():
+                view.viewport().update()
+

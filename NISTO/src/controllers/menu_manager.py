@@ -46,7 +46,8 @@ class MenuManager:
             (Modes.ADD_DEVICE, "Add Device"),
             (Modes.ADD_CONNECTION, "Add Connection"),
             (Modes.ADD_BOUNDARY, "Add Boundary"),
-            (Modes.DELETE, "Delete")
+            (Modes.DELETE, "Delete Tool"),
+            (Modes.DELETE_SELECTED, "Delete Selected")
         ]
         
         # Create action group for mutual exclusion

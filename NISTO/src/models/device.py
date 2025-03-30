@@ -367,3 +367,39 @@ class Device(QGraphicsItem):
         if hasattr(self.signals, 'double_clicked'):
             self.signals.double_clicked.emit(self)
         super().mouseDoubleClickEvent(event)
+    
+    def delete(self):
+        """Clean up resources before deletion."""
+        # Store scene and bounding rect before removal for later update
+        scene = self.scene()
+        update_rect = self.sceneBoundingRect().adjusted(-10, -10, 10, 10)
+        
+        # Remove the text label if it exists
+        if hasattr(self, 'text_item') and self.text_item:
+            if self.text_item.scene():
+                self.scene().removeItem(self.text_item)
+            self.text_item = None
+        
+        # Remove the icon if it exists
+        if hasattr(self, 'icon_item') and self.icon_item:
+            if self.icon_item.scene():
+                self.scene().removeItem(self.icon_item)
+            self.icon_item = None
+        
+        # Disconnect all signals
+        if hasattr(self, 'signals'):
+            if hasattr(self.signals, 'deleted'):
+                self.signals.deleted.emit(self)
+        
+        # Clean up connections
+        connections_to_remove = list(self.connections)  # Create a copy to avoid modification during iteration
+        for connection in connections_to_remove:
+            if hasattr(connection, 'delete'):
+                connection.delete()
+        
+        # Force update the scene area after deletion
+        if scene:
+            scene.update(update_rect)
+            # Force update on all views
+            for view in scene.views():
+                view.viewport().update()

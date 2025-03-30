@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QGraphicsView, QGraphicsScene, QGraphicsLineItem,
                            QGraphicsRectItem, QGraphicsItemGroup, QGraphicsItem, QMenu)
-from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QRectF, QEvent
+from PyQt5.QtCore import Qt, pyqtSignal, QPointF, QRectF, QEvent, QTimer
 from PyQt5.QtGui import QPainter, QBrush, QColor, QPen  # Ensure QPen is imported
 import logging
 from models.device import Device
@@ -129,8 +129,69 @@ class DeviceInteractionMode(CanvasMode):
         return None
 
 
+class SelectionBox:
+    """Represents a selection box for multiple item selection."""
+    
+    def __init__(self, scene):
+        self.scene = scene
+        self.start_pos = None
+        self.current_rect = None
+        self.rect_item = None
+    
+    def start(self, pos):
+        """Start the selection box at the given position."""
+        self.start_pos = pos
+        self.create_rect(pos, pos)
+    
+    def update(self, pos):
+        """Update the selection box with a new end position."""
+        if self.start_pos:
+            self.create_rect(self.start_pos, pos)
+    
+    def create_rect(self, start, end):
+        """Create or update the selection rectangle."""
+        # Remove existing rect if any
+        if self.rect_item and self.rect_item.scene() == self.scene:
+            self.scene.removeItem(self.rect_item)
+        
+        # Create new rect
+        self.current_rect = QRectF(start, end).normalized()
+        self.rect_item = QGraphicsRectItem(self.current_rect)
+        
+        # Style the rectangle
+        pen = QPen(QColor(70, 130, 180), 1, Qt.SolidLine)  # Steel blue
+        self.rect_item.setPen(pen)
+        self.rect_item.setBrush(QBrush(QColor(70, 130, 180, 30)))  # Semi-transparent
+        
+        # Add to scene
+        self.scene.addItem(self.rect_item)
+    
+    def finish(self, select_items=True):
+        """Finish the selection process and optionally select items."""
+        result = None
+        if self.rect_item and self.current_rect:
+            result = self.current_rect
+        
+        # Remove the rectangle
+        if self.rect_item and self.rect_item.scene() == self.scene:
+            self.scene.removeItem(self.rect_item)
+        
+        # Reset state
+        self.start_pos = None
+        self.current_rect = None
+        self.rect_item = None
+        
+        return result
+
+
 class SelectMode(CanvasMode):
     """Mode for selecting and manipulating devices and boundaries."""
+    
+    def __init__(self, canvas):
+        super().__init__(canvas)
+        self.selection_box = SelectionBox(canvas.scene())
+        self.drag_started = False
+        self.is_selecting_box = False
     
     def activate(self):
         """Enable dragging when select mode is active."""
@@ -146,7 +207,57 @@ class SelectMode(CanvasMode):
             if item.label:
                 item.label.start_editing()
                 return True
-        # Let the default QGraphicsView selection behavior handle it
+        
+        # Handle left button press for potential box selection
+        if event.button() == Qt.LeftButton:
+            # If clicking on empty space, start box selection
+            if not item:
+                self.is_selecting_box = True
+                self.selection_box.start(scene_pos)
+                return True  # We're handling it
+            
+            # If shift is not pressed, clear selection and let Qt handle it
+            if not (event.modifiers() & Qt.ShiftModifier):
+                # Let default QGraphicsView selection behavior handle it
+                pass
+        
+        # Let the default QGraphicsView selection behavior handle other cases
+        return False
+    
+    def mouse_move_event(self, event):
+        """Update selection box during drag."""
+        if event.buttons() & Qt.LeftButton and self.is_selecting_box:
+            scene_pos = self.canvas.mapToScene(event.pos())
+            self.selection_box.update(scene_pos)
+            return True
+        return False
+    
+    def mouse_release_event(self, event):
+        """Finalize selection on mouse release."""
+        if event.button() == Qt.LeftButton and self.is_selecting_box:
+            scene_pos = self.canvas.mapToScene(event.pos())
+            
+            # Finish the box selection
+            selection_rect = self.selection_box.finish()
+            
+            if selection_rect:
+                # Get items in the selection rectangle
+                items = self.canvas.scene().items(selection_rect, Qt.IntersectsItemShape)
+                
+                # If not extending selection (shift not pressed), clear current selection
+                if not (event.modifiers() & Qt.ShiftModifier):
+                    self.canvas.scene().clearSelection()
+                
+                # Select all valid items in the selection rectangle
+                for item in items:
+                    if isinstance(item, (Device, Connection, Boundary)):
+                        # Don't select temp graphics or helper items
+                        if not item.parentItem():  # Only top-level items
+                            item.setSelected(True)
+            
+            self.is_selecting_box = False
+            return True
+        
         return False
     
     def cursor(self):
@@ -165,7 +276,7 @@ class AddDeviceMode(CanvasMode):
 
 
 class DeleteMode(DeviceInteractionMode):
-    """Mode for deleting items from the canvas."""
+    """Mode for deleting items from the canvas by clicking on them."""
     
     def handle_mouse_press(self, event, scene_pos, item):
         if item:
@@ -183,6 +294,27 @@ class DeleteMode(DeviceInteractionMode):
                 self.canvas.delete_item_requested.emit(item)
                 return True
         return False
+    
+    def cursor(self):
+        return Qt.ForbiddenCursor
+
+
+class DeleteSelectedMode(CanvasMode):
+    """Mode for deleting all selected items on the canvas."""
+    
+    def activate(self):
+        """Called when this mode is activated."""
+        super().activate()
+        # When the mode is activated, immediately delete selected items
+        selected_items = self.canvas.scene().selectedItems()
+        if selected_items:
+            self.canvas.delete_selected_requested.emit()
+            # Automatically switch back to select mode after deletion
+            QTimer.singleShot(100, lambda: self.canvas.set_mode(Modes.SELECT))
+        else:
+            # If nothing is selected, show a hint and switch back to select mode
+            self.canvas.statusMessage.emit("No items selected. Select items first and try again.")
+            QTimer.singleShot(100, lambda: self.canvas.set_mode(Modes.SELECT))
     
     def cursor(self):
         return Qt.ForbiddenCursor
@@ -425,6 +557,8 @@ class Canvas(QGraphicsView):
     add_connection_requested = pyqtSignal(object, object, object)  # source, target, connection_data
     delete_connection_requested = pyqtSignal(object)  # connection
     delete_boundary_requested = pyqtSignal(object)  # boundary
+    delete_selected_requested = pyqtSignal()  # Signal for deleting all selected items
+    statusMessage = pyqtSignal(str)  # Signal for status bar messages
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -474,6 +608,7 @@ class Canvas(QGraphicsView):
             Modes.SELECT: SelectMode,
             Modes.ADD_DEVICE: AddDeviceMode,
             Modes.DELETE: DeleteMode,
+            Modes.DELETE_SELECTED: DeleteSelectedMode,
             Modes.ADD_BOUNDARY: AddBoundaryMode,
             Modes.ADD_CONNECTION: AddConnectionMode
         }
@@ -519,6 +654,17 @@ class Canvas(QGraphicsView):
             super().mouseReleaseEvent(event)
     
     def keyPressEvent(self, event):
+        """Handle key press events."""
+        # Handle delete key for selected items
+        if event.key() == Qt.Key_Delete:
+            selected_items = self.scene().selectedItems()
+            if selected_items:
+                # Emit signal to delete all selected items
+                self.delete_selected_requested.emit()
+                event.accept()
+                return
+        
+        # If not handled above, pass to mode manager or parent
         if not self.mode_manager.handle_event("key_press_event", event):
             super().keyPressEvent(event)
     
@@ -533,10 +679,11 @@ class Canvas(QGraphicsView):
         scene_pos = self.mapToScene(pos)
         item = self.scene().itemAt(scene_pos, self.transform())
         
+        # Create the context menu
+        menu = QMenu()
+        
         if item:
-            # Create context menu based on item type
-            menu = QMenu()
-            
+            # Context menu for items
             from models.connection import Connection
             if isinstance(item, Connection):
                 # Connection context menu
@@ -544,13 +691,152 @@ class Canvas(QGraphicsView):
             elif isinstance(item, Device):
                 # Device context menu
                 self._create_device_context_menu(menu, item)
+            elif isinstance(item, Boundary):
+                # Boundary context menu
+                self._create_boundary_context_menu(menu, item)
             
-            if not menu.isEmpty():
-                menu.exec_(event.globalPos())
-                return
+            # Add delete option for any item
+            menu.addSeparator()
+            delete_action = menu.addAction("Delete")
+            delete_action.triggered.connect(lambda: self._delete_item(item))
+        else:
+            # Context menu for empty canvas area
+            self._create_canvas_context_menu(menu, scene_pos)
         
-        # Default context menu if no item or specific menu
+        if not menu.isEmpty():
+            menu.exec_(event.globalPos())
+            return
+        
+        # Default context menu if no specific menu
         super().contextMenuEvent(event)
+
+    def _create_canvas_context_menu(self, menu, pos):
+        """Create context menu for empty canvas area."""
+        add_menu = menu.addMenu("Add")
+        
+        # Add device option
+        add_device_action = add_menu.addAction("Device")
+        add_device_action.triggered.connect(lambda: self.add_device_requested.emit(pos))
+        
+        # Add boundary option
+        add_boundary_action = add_menu.addAction("Boundary")
+        add_boundary_action.triggered.connect(lambda: self._start_boundary_at(pos))
+        
+        # Add connection option - disabled until implementation
+        add_connection_action = add_menu.addAction("Connection")
+        add_connection_action.triggered.connect(lambda: self._start_connection_at(pos))
+        add_connection_action.setEnabled(False)  # Not directly possible without selecting source device
+        
+        # Menu options for selected items
+        if self.scene().selectedItems():
+            menu.addSeparator()
+            delete_selected_action = menu.addAction("Delete Selected")
+            delete_selected_action.triggered.connect(self.delete_selected_requested.emit)
+
+    def _create_device_context_menu(self, menu, device):
+        """Create context menu for devices."""
+        # Add device-specific menu options
+        edit_action = menu.addAction("Edit Device")
+        edit_action.triggered.connect(lambda: self._edit_device(device))
+        
+        # Start connection from this device
+        start_connection_action = menu.addAction("Create Connection")
+        start_connection_action.triggered.connect(lambda: self._start_connection_from(device))
+
+    def _create_boundary_context_menu(self, menu, boundary):
+        """Create context menu for boundaries."""
+        edit_action = menu.addAction("Edit Label")
+        edit_action.triggered.connect(lambda: self._edit_boundary_label(boundary))
+        
+        # Add color submenu
+        color_menu = menu.addMenu("Change Color")
+        
+        # Add some color options
+        colors = [
+            ("Blue", QColor(40, 120, 200, 80)),
+            ("Green", QColor(40, 200, 120, 80)),
+            ("Red", QColor(200, 40, 40, 80)),
+            ("Yellow", QColor(200, 200, 40, 80)),
+            ("Purple", QColor(120, 40, 200, 80))
+        ]
+        
+        for name, color in colors:
+            color_action = color_menu.addAction(name)
+            color_action.triggered.connect(lambda checked, c=color: boundary.set_color(c))
+
+    def _delete_item(self, item):
+        """Delete a specific item."""
+        # Store bounding rect for update
+        update_rect = None
+        if hasattr(item, 'sceneBoundingRect'):
+            update_rect = item.sceneBoundingRect().adjusted(-20, -20, 20, 20)
+        
+        if isinstance(item, Device):
+            self.delete_device_requested.emit(item)
+        elif isinstance(item, Connection):
+            self.delete_connection_requested.emit(item)
+        elif isinstance(item, Boundary):
+            self.delete_boundary_requested.emit(item)
+        else:
+            self.delete_item_requested.emit(item)
+        
+        # Force update of affected area
+        if update_rect:
+            self.scene().update(update_rect)
+        
+        # Force a complete viewport update
+        self.viewport().update()
+
+    def _edit_device(self, device):
+        """Edit the selected device."""
+        # This would be implemented to show the device dialog for editing
+        from views.device_dialog import DeviceDialog
+        dialog = DeviceDialog(self.parent(), device)
+        dialog.exec_()
+
+    def _edit_boundary_label(self, boundary):
+        """Edit boundary label."""
+        if hasattr(boundary, 'label'):
+            boundary.label.start_editing()
+
+    def _start_boundary_at(self, pos):
+        """Start creating a boundary at position."""
+        # Switch to boundary creation mode
+        self.set_mode(Modes.ADD_BOUNDARY)
+        
+        # Get the mode instance and simulate a mouse press to start boundary
+        boundary_mode = self.mode_manager.get_mode_instance(Modes.ADD_BOUNDARY)
+        if boundary_mode:
+            boundary_mode.start_pos = pos
+            # We don't create the boundary immediately as it needs a release event with size
+
+    def _start_connection_from(self, device):
+        """Start creating a connection from a device."""
+        # Switch to connection mode
+        self.set_mode(Modes.ADD_CONNECTION)
+        
+        # Get the connection mode instance
+        connection_mode = self.mode_manager.get_mode_instance(Modes.ADD_CONNECTION)
+        if connection_mode:
+            # Set the source device and start point
+            connection_mode.source_device = device
+            start_port = device.get_nearest_port(device.get_center_position())
+            
+            # Create the temporary line
+            connection_mode.temp_line = QGraphicsLineItem(
+                start_port.x(), start_port.y(),
+                start_port.x(), start_port.y()
+            )
+            
+            # Style the line
+            pen = QPen(QColor(0, 120, 215), 2, Qt.DashLine)
+            pen.setDashPattern([5, 3])
+            pen.setCapStyle(Qt.RoundCap)
+            connection_mode.temp_line.setPen(pen)
+            connection_mode.temp_line.setZValue(1000)
+            
+            # Add to scene
+            self.scene().addItem(connection_mode.temp_line)
 
     def _create_connection_context_menu(self, menu, connection):
         """Create context menu for a connection."""

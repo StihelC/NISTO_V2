@@ -11,6 +11,9 @@ from controllers.connection_controller import ConnectionController
 from controllers.boundary_controller import BoundaryController
 from controllers.clipboard_manager import ClipboardManager
 from utils.event_bus import EventBus
+from models.device import Device
+from models.connection import Connection
+from models.boundary import Boundary
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -26,6 +29,12 @@ class MainWindow(QMainWindow):
         # Create canvas
         self.canvas = Canvas(self)
         self.setCentralWidget(self.canvas)
+        
+        # Create status bar
+        self.statusBar().showMessage("Ready")
+        
+        # Connect status message signal
+        self.canvas.statusMessage.connect(self.statusBar().showMessage)
         
         # Create event bus for communication between components
         self.event_bus = EventBus()
@@ -124,6 +133,7 @@ class MainWindow(QMainWindow):
         self.canvas.delete_connection_requested.connect(self.connection_controller.on_delete_connection_requested)
         self.canvas.delete_boundary_requested.connect(self.boundary_controller.on_delete_boundary_requested)
         self.canvas.delete_item_requested.connect(self.on_delete_item_requested)
+        self.canvas.delete_selected_requested.connect(self.on_delete_selected_requested)
     
     def set_mode(self, mode):
         """Set the current interaction mode."""
@@ -138,6 +148,32 @@ class MainWindow(QMainWindow):
             self.logger.info(f"Deleting item of type {type(item).__name__}")
             self.canvas.scene().removeItem(item)
     
+    def on_delete_selected_requested(self):
+        """Handle request to delete all selected items."""
+        selected_items = self.canvas.scene().selectedItems()
+        
+        if not selected_items:
+            return
+        
+        # Group items by type to handle deletion in the correct order
+        connections = [item for item in selected_items if isinstance(item, Connection)]
+        devices = [item for item in selected_items if isinstance(item, Device)]
+        boundaries = [item for item in selected_items if isinstance(item, Boundary)]
+        
+        # Delete connections first to avoid references to deleted devices
+        for connection in connections:
+            self.connection_controller.on_delete_connection_requested(connection)
+        
+        # Delete devices
+        for device in devices:
+            self.device_controller.on_delete_device_requested(device)
+        
+        # Delete boundaries
+        for boundary in boundaries:
+            self.boundary_controller.on_delete_boundary_requested(boundary)
+            
+        self.logger.info(f"Deleted {len(connections)} connections, {len(devices)} devices, and {len(boundaries)} boundaries")
+
     def keyPressEvent(self, event):
         """Handle key press events."""
         # Let the canvas and its modes handle the key first
