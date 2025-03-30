@@ -238,14 +238,14 @@ class DeviceDialog(QDialog):
     def get_connection_data(self):
         """Get the connection configuration data."""
         conn_type = self.connection_type_combo.currentData()
-        # Use the display name if no custom label is set or if the label is still "Link"
-        label = self.connection_label_edit.text()
-        if not label or label == "Link":
-            label = ConnectionTypes.DISPLAY_NAMES.get(conn_type, "Link")
-            
+        display_name = ConnectionTypes.DISPLAY_NAMES.get(conn_type, "Link")
+        
+        print(f"DEBUG - DeviceDialog - Connection type: {conn_type}")
+        print(f"DEBUG - DeviceDialog - Display name: {display_name}")
+        
         return {
             'type': conn_type,
-            'label': label,
+            'label': display_name,  # Always use the display name
             'bandwidth': ConnectionTypes.DEFAULT_BANDWIDTHS.get(conn_type, ""),
             'latency': ""
         }

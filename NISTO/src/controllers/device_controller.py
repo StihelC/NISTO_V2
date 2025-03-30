@@ -189,16 +189,22 @@ class DeviceController:
             # Create connection
             connection = Connection(source, target)
             
-            # Set connection properties
+            # Debug connection data
+            print(f"DEBUG - DeviceController - Connection data: {connection_data}")
+            
+            # Set connection type
             connection.connection_type = connection_data['type']
             
-            # Always use the connection type's display name by default
-            connection.label_text = ConnectionTypes.DISPLAY_NAMES.get(connection_data['type'], "Link")
+            # Get the display name directly from ConnectionTypes
+            display_name = ConnectionTypes.DISPLAY_NAMES.get(connection_data['type'], "Link")
+            print(f"DEBUG - DeviceController - Connection type: {connection_data['type']}")
+            print(f"DEBUG - DeviceController - Display name: {display_name}")
             
-            # If a specific non-default label was provided, use it instead
-            if connection_data['label'] and connection_data['label'] != "Link" and connection_data['label'] != connection.label_text:
-                connection.label_text = connection_data['label']
+            # Always use the display name from the connection type
+            connection.label_text = display_name
+            print(f"DEBUG - DeviceController - Final label_text: {connection.label_text}")
             
+            # Set other connection properties
             connection.bandwidth = connection_data['bandwidth']
             connection.latency = connection_data['latency']
             

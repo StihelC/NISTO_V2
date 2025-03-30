@@ -88,6 +88,10 @@ class Connection(QGraphicsPathItem):
     def __init__(self, source_device, target_device, connection_type=None, label=None, bandwidth=None, latency=None):
         super().__init__()
         
+        # Debug parameters
+        print(f"DEBUG - Connection.__init__ - connection_type: {connection_type}")
+        print(f"DEBUG - Connection.__init__ - label: {label}")
+        
         # Create signals object
         self.signals = ConnectionSignals()
         
@@ -110,7 +114,16 @@ class Connection(QGraphicsPathItem):
         
         # Set connection properties
         self.connection_type = connection_type or ConnectionTypes.ETHERNET
-        self.label_text = label or "Link"  # Default label text
+        
+        # Use the display name for the connection type if no specific label is provided
+        if not label:
+            self.label_text = ConnectionTypes.DISPLAY_NAMES.get(self.connection_type, "Link")
+        else:
+            self.label_text = label
+        
+        print(f"DEBUG - Connection.__init__ - self.connection_type: {self.connection_type}")
+        print(f"DEBUG - Connection.__init__ - self.label_text: {self.label_text}")
+        
         self.bandwidth = bandwidth or ""
         self.latency = latency or ""
         
