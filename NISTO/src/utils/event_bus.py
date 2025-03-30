@@ -2,54 +2,46 @@ from PyQt5.QtCore import QObject, pyqtSignal
 
 class EventBus(QObject):
     """
-    A simple event bus to facilitate communication between components.
+    A simple event bus for communication between components.
     
-    This provides a centralized mechanism for components to communicate
-    without having to know about each other directly.
+    Usage:
+    - Register callbacks with event_bus.on(event_name, callback)
+    - Emit events with event_bus.emit(event_name, *args, **kwargs)
     """
-    
-    # Define signals
-    device_event = pyqtSignal(str, object)
-    connection_event = pyqtSignal(str, object)
-    boundary_event = pyqtSignal(str, object)
-    mode_event = pyqtSignal(str, object)
     
     def __init__(self):
         super().__init__()
-        self.listeners = {}
-    
-    def emit(self, event_name, data=None):
-        """Emit an event with optional data."""
-        # Emit on the appropriate signal based on event prefix
-        if event_name.startswith("device_"):
-            self.device_event.emit(event_name, data)
-        elif event_name.startswith("connection_"):
-            self.connection_event.emit(event_name, data)
-        elif event_name.startswith("boundary_"):
-            self.boundary_event.emit(event_name, data)
-        elif event_name.startswith("mode_"):
-            self.mode_event.emit(event_name, data)
-            
-        # Also call any registered callback listeners
-        if event_name in self.listeners:
-            for callback in self.listeners[event_name]:
-                try:
-                    callback(data)
-                except Exception as e:
-                    import traceback
-                    print(f"Error in event listener for {event_name}: {e}")
-                    traceback.print_exc()
+        self.callbacks = {}
+        self.controllers = {}  # Store controller references
     
     def on(self, event_name, callback):
         """Register a callback for an event."""
-        if event_name not in self.listeners:
-            self.listeners[event_name] = []
-        self.listeners[event_name].append(callback)
+        if event_name not in self.callbacks:
+            self.callbacks[event_name] = []
+        self.callbacks[event_name].append(callback)
         
-        # Return a function that can be called to remove this listener
-        return lambda: self.remove_listener(event_name, callback)
+    def off(self, event_name, callback=None):
+        """Remove a callback for an event."""
+        if event_name not in self.callbacks:
+            return
+        
+        if callback is None:
+            # Remove all callbacks for this event
+            self.callbacks[event_name] = []
+        else:
+            # Remove specific callback
+            self.callbacks[event_name] = [cb for cb in self.callbacks[event_name] if cb != callback]
     
-    def remove_listener(self, event_name, callback):
-        """Remove a registered callback."""
-        if event_name in self.listeners and callback in self.listeners[event_name]:
-            self.listeners[event_name].remove(callback)
+    def emit(self, event_name, *args, **kwargs):
+        """Emit an event with arguments."""
+        if event_name in self.callbacks:
+            for callback in self.callbacks[event_name]:
+                callback(*args, **kwargs)
+    
+    def register_controller(self, name, controller):
+        """Register a controller with the event bus."""
+        self.controllers[name] = controller
+        
+    def get_controller(self, name):
+        """Get a registered controller."""
+        return self.controllers.get(name)

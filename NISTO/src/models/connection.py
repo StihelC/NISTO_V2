@@ -3,6 +3,7 @@ from PyQt5.QtGui import QPen, QColor, QPainterPath, QFont, QBrush
 from PyQt5.QtCore import Qt, QPointF, pyqtSignal, QObject, QRectF
 import uuid
 from constants import ConnectionTypes
+import logging
 
 class ConnectionSignals(QObject):
     """Signals for connection events."""
@@ -73,86 +74,137 @@ class EditableTextItem(QGraphicsTextItem):
             super().keyPressEvent(event)
 
 class Connection(QGraphicsPathItem):
-    """A connection between two devices."""
+    """Represents a connection between two devices in the topology."""
     
-    # Line styles
-    STYLE_SOLID = Qt.SolidLine
-    STYLE_DASHED = Qt.DashLine
-    STYLE_DOTTED = Qt.DotLine
-    
-    # Connection styles
+    # Routing styles
     STYLE_STRAIGHT = 0
     STYLE_ORTHOGONAL = 1
     STYLE_CURVED = 2
     
-    def __init__(self, source_device, target_device, connection_type=None, label=None, bandwidth=None, latency=None):
+    # Path update modes
+    UPDATE_BOTH_ENDS = 0
+    UPDATE_SOURCE = 1
+    UPDATE_TARGET = 2
+    
+    def __init__(self, source_device, target_device, source_port=None, target_port=None):
+        """Initialize a connection between two devices."""
         super().__init__()
         
-        # Debug parameters
-        print(f"DEBUG - Connection.__init__ - connection_type: {connection_type}")
-        print(f"DEBUG - Connection.__init__ - label: {label}")
+        # Basic setup
+        self.logger = logging.getLogger(__name__)
+        self.id = str(uuid.uuid4())
+        self.source_device = source_device
+        self.target_device = target_device
+        
+        # Add to devices' connections list
+        source_device.add_connection(self)
+        target_device.add_connection(self)
+        
+        # Port positions
+        self.source_port = source_port or source_device.get_nearest_port(target_device.get_center_position())
+        self.target_port = target_port or target_device.get_nearest_port(source_device.get_center_position())
+        self._source_port = self.source_port
+        self._target_port = self.target_port
+        
+        # Debug port positions
+        self.logger.debug(f"Source port: ({self.source_port.x()}, {self.source_port.y()})")
+        self.logger.debug(f"Target port: ({self.target_port.x()}, {self.target_port.y()})")
+        
+        # Store raw device positions
+        self.source_pos = source_device.scenePos()
+        self.target_pos = target_device.scenePos()
+        
+        # Visual properties
+        self._label_text = "Link"  # Default label
+        self.connection_type = "ethernet"  # Default type
+        self.bandwidth = "1G"  # Default bandwidth
+        self.latency = "0ms"  # Default latency
+        
+        # Style properties
+        self._line_width = 2
+        self.line_width = 2
+        self.line_color = QColor(70, 70, 70)
+        self.line_style = Qt.SolidLine
+        self._base_color = QColor(70, 70, 70)  # Default dark gray
+        self._hover_color = QColor(0, 120, 215)  # Default bright blue (Windows accent color)
+        self.selected_color = QColor(255, 140, 0)  # Orange
+        self._text_color = QColor(40, 40, 40)  # Near black
+        self._routing_style = self.STYLE_STRAIGHT
+        self.routing_style = self.STYLE_STRAIGHT
+        
+        # Track state
+        self.is_selected = False
+        self.is_hover = False
+        self._was_selected = False  # Track selection state for style updates
+        self.control_points = []  # For curved paths
         
         # Create signals object
         self.signals = ConnectionSignals()
         
-        # Store device references
-        self.source_device = source_device
-        self.target_device = target_device
+        # Interactivity
+        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.ItemIsFocusable, True)
+        self.setAcceptHoverEvents(True)
         
-        # Register this connection with the devices
-        if hasattr(source_device, 'add_connection'):
-            source_device.add_connection(self)
-        if hasattr(target_device, 'add_connection'):
-            target_device.add_connection(self)
+        # Set lower z-value than devices (0)
+        self.setZValue(-5)
         
-        # Generate a unique ID
-        self.id = str(uuid.uuid4())
-        
-        # Store source and target ports (scene coordinates)
-        self._source_port = self._find_best_port(source_device, target_device)
-        self._target_port = self._find_best_port(target_device, source_device)
-        
-        # Set connection properties
-        self.connection_type = connection_type or ConnectionTypes.ETHERNET
-        
-        # Use the display name for the connection type if no specific label is provided
-        if not label:
-            self.label_text = ConnectionTypes.DISPLAY_NAMES.get(self.connection_type, "Link")
-        else:
-            self.label_text = label
-        
-        print(f"DEBUG - Connection.__init__ - self.connection_type: {self.connection_type}")
-        print(f"DEBUG - Connection.__init__ - self.label_text: {self.label_text}")
-        
-        self.bandwidth = bandwidth or ""
-        self.latency = latency or ""
-        
-        # Visual properties
-        self.routing_style = self.STYLE_STRAIGHT  # Default routing style
-        self.line_width = 2
-        self.line_color = QColor(30, 30, 30)
-        self.line_style = Qt.SolidLine
-        self.selected_color = QColor(255, 140, 0)  # Orange
-        self._was_selected = False
-        
-        # Set style based on connection type
-        self.set_style_for_type(self.connection_type)
-        
-        # Always create a label (with default text if none provided)
+        # Connection label
         self.label = None
-        self.create_label()
-            
-        # Update path
+        
+        # Create the path before creating the label
         self.update_path()
         
-        # Make selectable and ensure it accepts mouse events
-        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-        self.setFlag(QGraphicsItem.ItemIsFocusable, True)  # Can receive keyboard focus
-        self.setAcceptHoverEvents(True)  # Will receive hover events
-        self.setAcceptedMouseButtons(Qt.LeftButton | Qt.RightButton)  # Accept mouse buttons
+        # Now create the label after the path is created
+        self.create_label()
         
-        # Connect to device position changes
-        self._connect_to_device_changes()
+        # Setup listeners for device movement
+        if hasattr(source_device, 'signals') and hasattr(source_device.signals, 'moved'):
+            source_device.signals.moved.connect(self._handle_device_moved)
+        
+        if hasattr(target_device, 'signals') and hasattr(target_device.signals, 'moved'):
+            target_device.signals.moved.connect(self._handle_device_moved)
+
+    @property
+    def label_text(self):
+        """Get the label text."""
+        return self._label_text
+    
+    @label_text.setter
+    def label_text(self, value):
+        """Set the label text and update the label."""
+        # Ensure the value isn't a QPointF object
+        if isinstance(value, QPointF):
+            self.logger.warning(f"Attempted to set label_text to QPointF: {value}")
+            return
+            
+        self._label_text = value
+        
+        # Update the label if it exists
+        if self.label:
+            self.label.setPlainText(self._label_text)
+            self._update_label_position()
+    
+    def create_label(self):
+        """Create or update the connection label."""
+        if not self.label:
+            self.label = QGraphicsTextItem(self)
+            
+            # Style the label
+            self.label.setDefaultTextColor(self._text_color)
+            font = QFont()
+            font.setPointSize(8)
+            self.label.setFont(font)
+        
+        # Set the text - safely
+        if hasattr(self, '_label_text') and self._label_text and not isinstance(self._label_text, QPointF):
+            self.label.setPlainText(self._label_text)
+        else:
+            # Default label
+            self.label.setPlainText("Link")
+        
+        # Position the label
+        self._update_label_position()
     
     def _connect_to_device_changes(self):
         """Connect to device signals to update when devices move."""
@@ -250,6 +302,9 @@ class Connection(QGraphicsPathItem):
             
             path.cubicTo(cp1, cp2, self._target_port)
         
+        # Log path creation
+        self.logger.debug(f"Path updated: {path}")
+        
         # Set the path
         self.setPath(path)
         
@@ -261,18 +316,35 @@ class Connection(QGraphicsPathItem):
         if not self.label:
             return
             
-        # Get path center point
-        path_length = self.path().length()
-        center_point = self.path().pointAtPercent(0.5)
-        
-        # Position the label precisely at the center
-        label_width = self.label.boundingRect().width()
-        label_height = self.label.boundingRect().height()
-        
-        self.label.setPos(
-            center_point.x() - label_width/2,
-            center_point.y() - label_height/2
-        )
+        # Get path center point - use safe access to path
+        # Fix: Use QGraphicsPathItem's path method instead of stored path attribute
+        path = self.path()
+        if path and not path.isEmpty():
+            center_point = path.pointAtPercent(0.5)
+            
+            # Position the label precisely at the center
+            label_width = self.label.boundingRect().width()
+            label_height = self.label.boundingRect().height()
+            
+            self.label.setPos(
+                center_point.x() - label_width/2,
+                center_point.y() - label_height/2
+            )
+        else:
+            # Fallback if no valid path exists yet
+            # Use the midpoint between source and target ports
+            if hasattr(self, '_source_port') and hasattr(self, '_target_port'):
+                mid_x = (self._source_port.x() + self._target_port.x()) / 2
+                mid_y = (self._source_port.y() + self._target_port.y()) / 2
+                
+                # Position label at this midpoint
+                label_width = self.label.boundingRect().width()
+                label_height = self.label.boundingRect().height()
+                
+                self.label.setPos(
+                    mid_x - label_width/2,
+                    mid_y - label_height/2
+                )
         
         # Only show editing UI when editing
         if not getattr(self.label, 'editing', False):
@@ -545,3 +617,13 @@ class Connection(QGraphicsPathItem):
             for view in self.scene().views():
                 if hasattr(view, 'connection_deleted'):
                     view.connection_deleted.emit(self)
+
+    def _handle_device_moved(self, device):
+        """Handle when a device has moved and update the connection accordingly."""
+        # Update the path when either device moves
+        self.update_path()
+        
+        # Force update in the scene
+        if self.scene():
+            scene_path = self.mapToScene(self.boundingRect()).boundingRect()
+            self.scene().update(scene_path)

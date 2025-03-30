@@ -67,17 +67,18 @@ class CanvasMode:
     
     def __init__(self, canvas):
         self.canvas = canvas
+        # Add a name attribute for easier identification
+        self.name = self.__class__.__name__
     
     def handle_mouse_press(self, event, scene_pos, item):
         """Template method for mouse press - override in subclasses."""
         return False
-        
+    
     def mouse_press_event(self, event):
         """Handle mouse press event with common logic."""
         if event.button() == Qt.LeftButton:
             scene_pos = self.canvas.mapToScene(event.pos())
             item = self.canvas.scene().itemAt(scene_pos, self.canvas.transform())
-            
             if self.handle_mouse_press(event, scene_pos, item):
                 event.accept()
                 return True
@@ -87,7 +88,7 @@ class CanvasMode:
         """Handle mouse move event in this mode."""
         return False
     
-    def mouse_release_event(self, event):
+    def mouse_release_event(self, event, scene_pos=None, item=None):
         """Handle mouse release event in this mode."""
         return False
     
@@ -113,7 +114,6 @@ class CanvasMode:
         for device in self.canvas.devices:
             device.setFlag(QGraphicsItem.ItemIsMovable, draggable)
 
-
 class DeviceInteractionMode(CanvasMode):
     """Base class for modes that interact with devices."""
     
@@ -127,7 +127,6 @@ class DeviceInteractionMode(CanvasMode):
         if self.is_device(item):
             return item
         return None
-
 
 class SelectionBox:
     """Represents a selection box for multiple item selection."""
@@ -183,7 +182,6 @@ class SelectionBox:
         
         return result
 
-
 class SelectMode(CanvasMode):
     """Mode for selecting and manipulating devices and boundaries."""
     
@@ -232,14 +230,13 @@ class SelectMode(CanvasMode):
             return True
         return False
     
-    def mouse_release_event(self, event):
+    def mouse_release_event(self, event, scene_pos=None, item=None):
         """Finalize selection on mouse release."""
         if event.button() == Qt.LeftButton and self.is_selecting_box:
-            scene_pos = self.canvas.mapToScene(event.pos())
+            scene_pos = scene_pos or self.canvas.mapToScene(event.pos())
             
             # Finish the box selection
             selection_rect = self.selection_box.finish()
-            
             if selection_rect:
                 # Get items in the selection rectangle
                 items = self.canvas.scene().items(selection_rect, Qt.IntersectsItemShape)
@@ -257,12 +254,10 @@ class SelectMode(CanvasMode):
             
             self.is_selecting_box = False
             return True
-        
         return False
     
     def cursor(self):
         return Qt.ArrowCursor
-
 
 class AddDeviceMode(CanvasMode):
     """Mode for adding devices to the canvas."""
@@ -273,7 +268,6 @@ class AddDeviceMode(CanvasMode):
     
     def cursor(self):
         return Qt.CrossCursor
-
 
 class DeleteMode(DeviceInteractionMode):
     """Mode for deleting items from the canvas by clicking on them."""
@@ -298,7 +292,6 @@ class DeleteMode(DeviceInteractionMode):
     def cursor(self):
         return Qt.ForbiddenCursor
 
-
 class DeleteSelectedMode(CanvasMode):
     """Mode for deleting all selected items on the canvas."""
     
@@ -318,7 +311,6 @@ class DeleteSelectedMode(CanvasMode):
     
     def cursor(self):
         return Qt.ForbiddenCursor
-
 
 class AddBoundaryMode(CanvasMode):
     """Mode for adding boundary regions to the canvas."""
@@ -344,13 +336,12 @@ class AddBoundaryMode(CanvasMode):
             # Create updated rectangle
             rect = QRectF(self.start_pos, current_pos).normalized()
             self.current_rect = self.temp_graphics.add_temp_rect(rect)
-            
             return True
         return False
     
-    def mouse_release_event(self, event):
+    def mouse_release_event(self, event, scene_pos=None, item=None):
         if event.button() == Qt.LeftButton and self.start_pos:
-            end_pos = self.canvas.mapToScene(event.pos())
+            end_pos = scene_pos or self.canvas.mapToScene(event.pos())
             rect = QRectF(self.start_pos, end_pos).normalized()
             
             # Only create boundary if it has a reasonable size
@@ -362,7 +353,7 @@ class AddBoundaryMode(CanvasMode):
             else:
                 # If too small, just clean up without creating
                 self.temp_graphics.clear()
-                
+            
             self.start_pos = None
             return True
         return False
@@ -373,7 +364,6 @@ class AddBoundaryMode(CanvasMode):
     
     def cursor(self):
         return Qt.CrossCursor
-
 
 class AddConnectionMode(CanvasMode):
     """Mode for creating connections between devices."""
@@ -390,21 +380,18 @@ class AddConnectionMode(CanvasMode):
         # Make devices non-draggable in this mode
         for device in self.canvas.devices:
             device.setFlag(QGraphicsItem.ItemIsMovable, False)
-            
+        
         # Force update to show connection points
         self.canvas.viewport().update()
-        
         self.logger.debug("Connection mode activated")
-    
+        
     def deactivate(self):
         """Called when this mode is deactivated."""
         self.clean_up()
-        
         # Force update to hide connection points
         self.canvas.viewport().update()
-        
         self.logger.debug("Connection mode deactivated")
-    
+        
     def is_device(self, item):
         """Check if an item is a device."""
         return isinstance(item, Device)
@@ -415,29 +402,34 @@ class AddConnectionMode(CanvasMode):
         item = self.canvas.scene().itemAt(pos, self.canvas.transform())
         if self.is_device(item):
             return item
-            
+        
         # If that fails, check all devices manually
         for device in self.canvas.devices:
             if device.sceneBoundingRect().contains(pos):
                 return device
-                
         return None
-    
-    def mouse_press_event(self, event):
+                
+    def handle_mouse_press(self, event, scene_pos, item):
         """Handle mouse press event."""
         if event.button() != Qt.LeftButton:
             return False
         
-        # Get the position in scene coordinates
-        scene_pos = self.canvas.mapToScene(event.pos())
-        
         # Check if we clicked on a device
-        device = self.get_device_at_position(scene_pos)
+        device = None
+        if isinstance(item, Device):
+            device = item
+        else:
+            # Try to find a device at this position
+            for d in self.canvas.devices:
+                if d.sceneBoundingRect().contains(scene_pos):
+                    device = d
+                    break
         
         if device:
             if not self.source_device:
                 # First click - set source device
                 self.source_device = device
+                self.logger.debug(f"Selected source device: {device.name}")
                 
                 # Get the nearest port to where we clicked
                 start_port = device.get_nearest_port(scene_pos)
@@ -474,7 +466,7 @@ class AddConnectionMode(CanvasMode):
                         connection_data = dialog.get_connection_data()
                         
                         # Emit signal to the canvas with all necessary data
-                        self.logger.debug(f"Creating connection from {self.source_device} to {device} with type {connection_data['type']}")
+                        self.logger.debug(f"Creating connection from {self.source_device.name} to {device.name} with type {connection_data['type']}")
                         self.canvas.add_connection_requested.emit(
                             self.source_device, 
                             device,
@@ -496,13 +488,22 @@ class AddConnectionMode(CanvasMode):
         """Update line position during mouse movement."""
         current_pos = self.canvas.mapToScene(event.pos())
         
+        # Debug info about hover position
+        if event.pos().x() % 200 == 0 and event.pos().y() % 200 == 0:
+            self.logger.debug(f"Move event at: {current_pos}")
+        
         # Check if hovering over a device
-        hover_device = self.get_device_at_position(current_pos)
+        hover_device = None
+        for device in self.canvas.devices:
+            if device.sceneBoundingRect().contains(current_pos):
+                hover_device = device
+                break
+        
         if hover_device != self.hover_device:
             # Device under cursor changed
             self.hover_device = hover_device
             self.canvas.viewport().update()  # Force redraw to update connection points
-        
+            
         if self.source_device and self.temp_line:
             # Get the start position from the existing line
             line = self.temp_line.line()
@@ -515,10 +516,13 @@ class AddConnectionMode(CanvasMode):
             if hover_device and hover_device != self.source_device:
                 end_pos = hover_device.get_nearest_port(current_pos)
             
+            # Debug the line coordinates occasionally
+            if event.pos().x() % 500 == 0 and event.pos().y() % 500 == 0:
+                self.logger.debug(f"Line: ({start_pos.x()}, {start_pos.y()}) to ({end_pos.x()}, {end_pos.y()})")
+            
             # Update the line
             self.temp_line.setLine(start_pos.x(), start_pos.y(), end_pos.x(), end_pos.y())
             return True
-            
         return False
     
     def clean_up(self):
@@ -544,7 +548,6 @@ class AddConnectionMode(CanvasMode):
         if self.source_device:
             return Qt.PointingHandCursor
         return Qt.CrossCursor
-
 
 class Canvas(QGraphicsView):
     """Canvas widget for displaying and interacting with network devices."""
@@ -575,6 +578,13 @@ class Canvas(QGraphicsView):
         self.boundaries = []
         self.connections = []
         
+        # Event bus reference (will be set externally)
+        self.event_bus = None
+        
+        # Drag tracking variables
+        self._drag_start_pos = None
+        self._drag_item = None
+        
         # Set rendering hints for better quality
         self.setRenderHint(QPainter.Antialiasing)
         self.setRenderHint(QPainter.SmoothPixmapTransform)
@@ -595,6 +605,9 @@ class Canvas(QGraphicsView):
         # Setup mode manager
         self.mode_manager = ModeManager(self)
         
+        # Current mode reference
+        self.current_mode = None
+        
         # Set up modes
         self._setup_modes()
         
@@ -607,14 +620,8 @@ class Canvas(QGraphicsView):
         self.max_zoom = 5.0     # Maximum zoom level
         self.current_zoom = 1.0  # Current zoom level
         
-        # Enable mouse tracking and wheel events
-        self.setMouseTracking(True)
+        # Enable wheel events
         self.setDragMode(QGraphicsView.RubberBandDrag)
-        
-        # Set rendering quality
-        self.setRenderHint(QPainter.Antialiasing)
-        self.setRenderHint(QPainter.TextAntialiasing)
-        self.setRenderHint(QPainter.SmoothPixmapTransform)
         
         # Set viewport update mode to get smoother updates
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
@@ -639,37 +646,70 @@ class Canvas(QGraphicsView):
     def set_mode(self, mode):
         """Set the current interaction mode."""
         self.mode_manager.set_mode(mode)
+        self.current_mode = self.mode_manager.get_mode_instance(mode)
+    
+    def get_item_at(self, pos):
+        """Get item at the given view position."""
+        scene_pos = self.mapToScene(pos)
+        return self.scene().itemAt(scene_pos, self.transform())
     
     def mousePressEvent(self, event):
         """Handle mouse press events."""
-        try:
-            # Debug print
-            print(f"Canvas: mousePressEvent at {event.pos()}")
-            
-            if not self.mode_manager.handle_event("mouse_press_event", event):
-                super().mousePressEvent(event)
-        except Exception as e:
-            import traceback
-            self.logger.error(f"Error in mousePressEvent: {str(e)}")
-            traceback.print_exc()
+        # For tracking item movements
+        if event.button() == Qt.LeftButton and self.current_mode and isinstance(self.current_mode, SelectMode):
+            item = self.get_item_at(event.pos())
+            if item and (isinstance(item, Device) or isinstance(item, Boundary)):
+                self._drag_start_pos = item.scenePos()
+                self._drag_item = item
+        
+        # Call the original method
+        super().mousePressEvent(event)
+        
+        # Let the active mode handle the event
+        if self.current_mode:
+            scene_pos = self.mapToScene(event.pos())
+            item = self.get_item_at(event.pos())
+            self.current_mode.handle_mouse_press(event, scene_pos, item)
     
     def mouseMoveEvent(self, event):
         """Handle mouse move events."""
         try:
             # Only debug occasionally to avoid console spam
             if event.pos().x() % 100 == 0 and event.pos().y() % 100 == 0:
-                print(f"Canvas: mouseMoveEvent at {event.pos()}")
+                self.logger.debug(f"Canvas: mouseMoveEvent at {event.pos()}")
                 
             if not self.mode_manager.handle_event("mouse_move_event", event):
                 super().mouseMoveEvent(event)
         except Exception as e:
-            import traceback
             self.logger.error(f"Error in mouseMoveEvent: {str(e)}")
+            import traceback
             traceback.print_exc()
     
     def mouseReleaseEvent(self, event):
-        if not self.mode_manager.handle_event("mouse_release_event", event):
-            super().mouseReleaseEvent(event)
+        """Handle mouse release events."""
+        # Track item movements for undo/redo
+        if hasattr(self, '_drag_start_pos') and hasattr(self, '_drag_item'):
+            if self._drag_item and self._drag_start_pos:
+                current_pos = self._drag_item.scenePos()
+                if current_pos != self._drag_start_pos:
+                    # Calculate actual item position difference
+                    if abs(current_pos.x() - self._drag_start_pos.x()) > 2 or abs(current_pos.y() - self._drag_start_pos.y()) > 2:
+                        # Only record meaningful movements (more than a few pixels)
+                        if hasattr(self, 'event_bus') and self.event_bus:
+                            self.event_bus.emit("item_moved", self._drag_item, self._drag_start_pos, current_pos)
+        
+        # Reset drag tracking
+        self._drag_start_pos = None
+        self._drag_item = None
+        
+        # Call the original method
+        super().mouseReleaseEvent(event)
+        
+        # Let the active mode handle the event
+        if self.current_mode:
+            scene_pos = self.mapToScene(event.pos())
+            item = self.get_item_at(event.pos())
+            self.current_mode.mouse_release_event(event, scene_pos, item)
     
     def keyPressEvent(self, event):
         """Handle key press events."""

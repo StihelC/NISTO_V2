@@ -56,11 +56,14 @@ class MainWindow(QMainWindow):
         self.menu_manager = MenuManager(self, self.canvas, self.event_bus)
         self.menu_manager.create_toolbar()
         
+        # Initialize command_manager with a None value to avoid attribute errors
+        self.command_manager = None
+        
         # Create file menu with save/load actions
         self._create_file_menu()
         
-        # Create edit menu with clipboard actions
-        self._create_edit_menu()
+        # Don't create edit menu here - it will be created in main.py after command_manager is set
+        # self._create_edit_menu()  <-- Comment out or remove this line
         
         # Create view menu
         self._create_view_menu()
@@ -98,8 +101,32 @@ class MainWindow(QMainWindow):
         file_menu.addAction(exit_action)
 
     def _create_edit_menu(self):
-        """Create the Edit menu with clipboard actions."""
+        """Create the Edit menu with clipboard and undo/redo actions."""
         edit_menu = self.menuBar().addMenu("Edit")
+        
+        # Only add undo/redo actions if command_manager is initialized
+        if self.command_manager:
+            # Undo action
+            undo_action = QAction("Undo", self)
+            undo_action.setShortcut("Ctrl+Z")
+            undo_action.triggered.connect(self.command_manager.undo)
+            undo_action.setEnabled(self.command_manager.can_undo())
+            self.undo_action = undo_action
+            edit_menu.addAction(undo_action)
+            
+            # Redo action
+            redo_action = QAction("Redo", self)
+            redo_action.setShortcut("Ctrl+Y")
+            redo_action.triggered.connect(self.command_manager.redo)
+            redo_action.setEnabled(self.command_manager.can_redo())
+            self.redo_action = redo_action
+            edit_menu.addAction(redo_action)
+            
+            # Add separator after undo/redo
+            edit_menu.addSeparator()
+            
+            # Connect to undo/redo manager signals for updates
+            self.command_manager.undo_redo_manager.stack_changed.connect(self._update_undo_redo_actions)
         
         # Cut action
         cut_action = QAction("Cut", self)
@@ -118,7 +145,23 @@ class MainWindow(QMainWindow):
         paste_action.setShortcut("Ctrl+V")
         paste_action.triggered.connect(self.clipboard_manager.paste)
         edit_menu.addAction(paste_action)
-    
+        
+        # Delete action
+        delete_action = QAction("Delete", self)
+        delete_action.setShortcut("Delete")
+        delete_action.triggered.connect(self.on_delete_selected_requested)
+        edit_menu.addAction(delete_action)
+
+    def _update_undo_redo_actions(self):
+        """Update the undo/redo actions based on state."""
+        if self.command_manager and hasattr(self, 'undo_action'):
+            self.undo_action.setEnabled(self.command_manager.can_undo())
+            self.undo_action.setText(self.command_manager.get_undo_text())
+            
+        if self.command_manager and hasattr(self, 'redo_action'):
+            self.redo_action.setEnabled(self.command_manager.can_redo())
+            self.redo_action.setText(self.command_manager.get_redo_text())
+
     def _create_view_menu(self):
         """Create the View menu."""
         view_menu = self.menuBar().addMenu("&View")
@@ -185,24 +228,69 @@ class MainWindow(QMainWindow):
         if not selected_items:
             return
         
-        # Group items by type to handle deletion in the correct order
-        connections = [item for item in selected_items if isinstance(item, Connection)]
-        devices = [item for item in selected_items if isinstance(item, Device)]
-        boundaries = [item for item in selected_items if isinstance(item, Boundary)]
-        
-        # Delete connections first to avoid references to deleted devices
-        for connection in connections:
-            self.connection_controller.on_delete_connection_requested(connection)
-        
-        # Delete devices
-        for device in devices:
-            self.device_controller.on_delete_device_requested(device)
-        
-        # Delete boundaries
-        for boundary in boundaries:
-            self.boundary_controller.on_delete_boundary_requested(boundary)
+        try:
+            self.logger.info(f"Attempting to delete {len(selected_items)} selected items")
             
-        self.logger.info(f"Deleted {len(connections)} connections, {len(devices)} devices, and {len(boundaries)} boundaries")
+            # Group items by type to handle deletion in the correct order
+            connections = [item for item in selected_items if isinstance(item, Connection)]
+            devices = [item for item in selected_items if isinstance(item, Device)]
+            boundaries = [item for item in selected_items if isinstance(item, Boundary)]
+            
+            # Use composite command to handle undo/redo for multiple items
+            if hasattr(self, 'command_manager') and self.command_manager:
+                from controllers.commands import CompositeCommand
+                composite_cmd = CompositeCommand(description=f"Delete {len(selected_items)} Selected Items")
+                composite_cmd.undo_redo_manager = self.command_manager.undo_redo_manager
+                using_commands = True
+            else:
+                composite_cmd = None
+                using_commands = False
+            
+            # Delete connections first to avoid references to deleted devices
+            self.logger.info(f"Deleting {len(connections)} connections")
+            for connection in connections:
+                if using_commands:
+                    from controllers.commands import DeleteConnectionCommand
+                    cmd = DeleteConnectionCommand(self.connection_controller, connection)
+                    cmd.undo_redo_manager = self.command_manager.undo_redo_manager
+                    composite_cmd.add_command(cmd)
+                else:
+                    self.connection_controller._delete_connection(connection)
+            
+            # Delete devices
+            self.logger.info(f"Deleting {len(devices)} devices")
+            for device in devices:
+                if using_commands:
+                    from controllers.commands import DeleteDeviceCommand
+                    cmd = DeleteDeviceCommand(self.device_controller, device)
+                    cmd.undo_redo_manager = self.command_manager.undo_redo_manager
+                    composite_cmd.add_command(cmd)
+                else:
+                    self.device_controller._delete_device(device)
+            
+            # Delete boundaries
+            self.logger.info(f"Deleting {len(boundaries)} boundaries")
+            for boundary in boundaries:
+                if using_commands:
+                    from controllers.commands import DeleteBoundaryCommand
+                    cmd = DeleteBoundaryCommand(self.boundary_controller, boundary)
+                    composite_cmd.add_command(cmd)
+                else:
+                    self.boundary_controller.on_delete_boundary_requested(boundary)
+            
+            # Push the composite command if we're using undo/redo
+            if composite_cmd and composite_cmd.commands:
+                self.logger.info(f"Pushing composite delete command with {len(composite_cmd.commands)} actions")
+                self.command_manager.undo_redo_manager.push_command(composite_cmd)
+                
+            # Force a complete update of the canvas
+            self.canvas.viewport().update()
+            
+            self.logger.info(f"Deleted {len(connections)} connections, {len(devices)} devices, and {len(boundaries)} boundaries")
+        except Exception as e:
+            self.logger.error(f"Error in delete_selected: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
 
     def keyPressEvent(self, event):
         """Handle key press events."""

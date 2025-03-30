@@ -1,4 +1,5 @@
-from PyQt5.QtWidgets import QGraphicsItem
+import logging
+from PyQt5.QtWidgets import QGraphicsItem, QApplication
 from PyQt5.QtCore import QObject, pyqtSignal, Qt
 from constants import Modes
 
@@ -21,6 +22,8 @@ class ModeManager(QObject):
         self.canvas = canvas
         self.current_mode = None
         self.modes = {}
+        self.current_mode_id = None
+        self.logger = logging.getLogger(__name__)
         
         # Track previous mode for potential toggling back
         self.previous_mode = None
@@ -28,35 +31,42 @@ class ModeManager(QObject):
     def register_mode(self, mode_id, mode_instance):
         """Register a mode with the manager."""
         self.modes[mode_id] = mode_instance
+        self.logger.debug(f"Registered mode {mode_id}: {mode_instance.__class__.__name__}")
     
     def set_mode(self, mode_id):
         """Change to a different interaction mode."""
         if mode_id not in self.modes:
-            print(f"Warning: Unknown mode '{mode_id}', defaulting to select mode")
-            mode_id = Modes.SELECT
+            self.logger.error(f"Unknown mode ID: {mode_id}")
+            return False
         
-        old_mode = self.current_mode
+        old_mode_id = self.current_mode_id
         
         # Deactivate current mode if one is active
         if self.current_mode:
-            self._deactivate_mode(self.current_mode)
+            self.current_mode.deactivate()
             
         # Store previous mode
-        self.previous_mode = self.current_mode
+        self.previous_mode = self.current_mode_id
             
         # Activate new mode
-        self.current_mode = mode_id
+        self.current_mode = self.modes[mode_id]
+        self.current_mode_id = mode_id
         self._activate_mode(mode_id)
         
         # Emit signal for mode change
-        self.mode_changed.emit(old_mode, mode_id)
+        if old_mode_id:
+            self.mode_changed.emit(str(old_mode_id), str(mode_id))
         
-        # Return the mode instance for chaining
-        return self.modes[mode_id]
+        # Update cursor
+        QApplication.restoreOverrideCursor()
+        QApplication.setOverrideCursor(self.current_mode.cursor())
+        
+        self.logger.debug(f"Mode changed to: {mode_id}")
+        return True
     
     def toggle_select_mode(self):
         """Toggle between select mode and previous mode."""
-        if self.current_mode == Modes.SELECT and self.previous_mode:
+        if self.current_mode_id == Modes.SELECT and self.previous_mode:
             self.set_mode(self.previous_mode)
         else:
             self.set_mode(Modes.SELECT)
@@ -72,11 +82,6 @@ class ModeManager(QObject):
         # Mode-specific activation
         mode.activate()
     
-    def _deactivate_mode(self, mode_id):
-        """Deactivate a specific mode."""
-        mode = self.modes[mode_id]
-        mode.deactivate()
-    
     def _set_devices_draggable(self, draggable):
         """Helper to set draggability for all devices."""
         for device in self.canvas.devices:
@@ -87,29 +92,28 @@ class ModeManager(QObject):
         if not self.current_mode:
             return False
         
-        mode = self.modes[self.current_mode]
-        handler = getattr(mode, event_type, None)
+        handler = getattr(self.current_mode, event_type, None)
         
         if handler:
             try:
                 result = handler(event)
-                # Add debug logging
-                if event_type == "mouse_press_event":
-                    print(f"ModeManager: {event_type} in {self.current_mode} mode, result: {result}")
+                # Add more detailed debug logging for mouse events
+                if event_type == "mouse_move_event" and event.pos().x() % 500 == 0 and event.pos().y() % 500 == 0:
+                    self.logger.debug(f"Mode {self.current_mode.name} handling {event_type}")
                 return result
             except Exception as e:
+                self.logger.error(f"Error handling {event_type} in mode {self.current_mode_id}: {str(e)}")
                 import traceback
-                print(f"Error in {event_type} for {self.current_mode} mode: {e}")
                 traceback.print_exc()
         
         return False
     
     def get_current_mode(self):
         """Get the current active mode."""
-        return self.current_mode
+        return self.current_mode_id
     
     def get_mode_instance(self, mode_id=None):
         """Get a specific mode instance or the current one."""
         if mode_id is None:
-            mode_id = self.current_mode
+            mode_id = self.current_mode_id
         return self.modes.get(mode_id)

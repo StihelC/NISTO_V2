@@ -294,35 +294,45 @@ class Device(QGraphicsItem):
         
         return ports
     
-    def get_nearest_port(self, scene_pos):
-        """Get the nearest connection point to the given scene position."""
-        # Convert scene position to local coordinates
-        local_pos = self.mapFromScene(scene_pos)
+    def get_nearest_port(self, pos):
+        """Get the nearest connection port to the given position."""
+        # Create port positions
+        center = self.mapToScene(QPointF(self.width / 2, self.height / 2))
         
-        # Get all connection ports
-        ports = self.get_connection_ports()
+        # Define ports at the middle of each side
+        top = QPointF(center.x(), center.y() - self.height / 2)
+        right = QPointF(center.x() + self.width / 2, center.y())
+        bottom = QPointF(center.x(), center.y() + self.height / 2)
+        left = QPointF(center.x() - self.width / 2, center.y())
         
-        # Find closest port
-        closest_port = ports[0]
-        min_distance = self._distance(local_pos, ports[0])
+        # Find nearest edge point
+        ports = [top, right, bottom, left]
+        nearest_port = None
+        min_distance = float('inf')
         
-        for port in ports[1:]:
-            distance = self._distance(local_pos, port)
+        for port in ports:
+            dx = port.x() - pos.x()
+            dy = port.y() - pos.y()
+            distance = (dx * dx + dy * dy) ** 0.5
+            
             if distance < min_distance:
                 min_distance = distance
-                closest_port = port
+                nearest_port = port
         
-        # Convert back to scene coordinates
-        return self.mapToScene(closest_port)
+        # Debug nearest port
+        if nearest_port:
+            self.logger.debug(f"Nearest port for {self.name}: ({nearest_port.x()}, {nearest_port.y()})")
+            
+        return nearest_port
+    
+    def get_center_position(self):
+        """Get the center position of the device in scene coordinates."""
+        rect = self.boundingRect()
+        return self.mapToScene(rect.center())
     
     def _distance(self, p1, p2):
         """Calculate distance between two points."""
         return ((p1.x() - p2.x()) ** 2 + (p1.y() - p2.y()) ** 2) ** 0.5
-    
-    def get_center_position(self):
-        """Get the center position of the device in scene coordinates."""
-        center = QPointF(self.width / 2, self.height / 2)
-        return self.mapToScene(center)
     
     def setProperty(self, name, value):
         """Set a custom property."""
