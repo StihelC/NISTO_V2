@@ -1,9 +1,11 @@
 # NISTO
 
 ## Overview
+
 NISTO is a PyQt-based application that allows users to create, configure, and manage device objects on a canvas. Users can add, select, move, and remove devices, create boundaries, and establish connections between devices. The application supports custom icons, device properties, and advanced interaction modes.
 
 ## Features
+
 - **Interactive Canvas**: A central area where devices, boundaries, and connections can be displayed and interacted with.
 - **Device Management**: Users can add new devices, configure their properties, and manipulate them on the canvas.
 - **Connection Management**: Create and manage connections between devices with customizable styles (straight, orthogonal, curved).
@@ -14,7 +16,8 @@ NISTO is a PyQt-based application that allows users to create, configure, and ma
 - **Debugging Tools**: Visualize device bounds and toggle connection points for debugging.
 
 ## Project Structure
-```
+
+```text
 device-canvas-app
 ├── src
 │   ├── main.py                # Entry point of the application
@@ -47,45 +50,62 @@ device-canvas-app
 ```
 
 ## Installation
+
 1. Clone the repository:
+
    ```bash
    git clone <repository-url>
    ```
+
 2. Navigate to the project directory:
+
    ```bash
    cd device-canvas-app
    ```
+
 3. Create a virtual environment:
+
    ```bash
    python -m venv venv
    ```
+
 4. Activate the virtual environment:
    - On Windows:
+
      ```bash
      venv\Scripts\activate
      ```
+
    - On macOS/Linux:
+
      ```bash
      source venv/bin/activate
      ```
+
 5. Install the required dependencies:
+
    ```bash
    pip install -r requirements.txt
    ```
 
 ## Usage
+
 To run the application, execute the following command:
+
 ```bash
 python src/main.py
 ```
 
 ## Key Features
+
 ### Device Management
+
 - Add devices with predefined types (Router, Switch, Firewall, Server, etc.).
 - Configure device properties such as name, IP address, and description.
 - Upload custom icons for devices.
 
 ### Connection Management
+
 - Create connections between devices with customizable styles:
   - Straight lines
   - Orthogonal (right-angle) lines
@@ -93,19 +113,24 @@ python src/main.py
 - Edit connection labels and properties.
 
 ### Boundary Management
+
 - Define boundaries to group devices visually.
 - Customize boundary names and colors.
 
 ### Serialization
+
 - Save the current canvas state to a `.canvas` or `.json` file.
 - Load a saved canvas state to restore devices, connections, and boundaries.
 
 ### Debugging Tools
+
 - Visualize device bounds for debugging.
 - Toggle connection points visibility.
 
 ## Contributing
+
 Contributions are welcome! Please submit a pull request or open an issue for any enhancements or bug fixes.
 
 ## License
+
 This project is licensed under the MIT License. See the LICENSE file for details.
