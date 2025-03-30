@@ -333,10 +333,21 @@ class AddConnectionMode(CanvasMode):
             else:
                 # Second click - finalize connection
                 if device != self.source_device:
-                    # Emit signal to the canvas to create the connection
-                    # Don't call add_connection directly on the device
-                    self.logger.debug(f"Creating connection from {self.source_device} to {device}")
-                    self.canvas.add_connection_requested.emit(self.source_device, device)
+                    # Show connection type dialog
+                    from dialogs.connection_type_dialog import ConnectionTypeDialog
+                    dialog = ConnectionTypeDialog(self.canvas.parent())
+                    
+                    if dialog.exec_():
+                        # Get connection data
+                        connection_data = dialog.get_connection_data()
+                        
+                        # Emit signal to the canvas with all necessary data
+                        self.logger.debug(f"Creating connection from {self.source_device} to {device} with type {connection_data['type']}")
+                        self.canvas.add_connection_requested.emit(
+                            self.source_device, 
+                            device,
+                            connection_data
+                        )
                 
                 # Clean up temporary items
                 self.clean_up()
@@ -411,7 +422,7 @@ class Canvas(QGraphicsView):
     delete_device_requested = pyqtSignal(object)
     delete_item_requested = pyqtSignal(object)
     add_boundary_requested = pyqtSignal(object)  # QRectF
-    add_connection_requested = pyqtSignal(object, object)  # source, target
+    add_connection_requested = pyqtSignal(object, object, object)  # source, target, connection_data
     delete_connection_requested = pyqtSignal(object)  # connection
     delete_boundary_requested = pyqtSignal(object)  # boundary
     
@@ -573,4 +584,4 @@ class Canvas(QGraphicsView):
         menu.addSeparator()
         delete_action = menu.addAction("Delete Connection")
         delete_action.triggered.connect(lambda: self.delete_connection_requested.emit(connection))
-    
+

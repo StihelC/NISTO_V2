@@ -36,8 +36,7 @@ class MenuManager:
         # Add connection style menu/button
         self._create_connection_style_menu(toolbar)
         
-        # Create file toolbar
-        self._create_file_toolbar()
+        # Note: File toolbar creation has been removed
     
     def _create_mode_actions(self, toolbar):
         """Create and add mode toggle actions to the toolbar."""
@@ -131,19 +130,6 @@ class MenuManager:
         connection_style_btn.setPopupMode(QToolButton.InstantPopup)
         connection_style_btn.setMenu(connection_style_menu)
         toolbar.addWidget(connection_style_btn)
-    
-    def _create_file_toolbar(self):
-        """Create toolbar for file operations."""
-        file_toolbar = QToolBar("File Operations")
-        self.main_window.addToolBar(file_toolbar)
-        
-        save_action = QAction("Save Canvas", self.main_window)
-        save_action.triggered.connect(self.main_window.save_canvas)
-        file_toolbar.addAction(save_action)
-        
-        load_action = QAction("Load Canvas", self.main_window)
-        load_action.triggered.connect(self.main_window.load_canvas)
-        file_toolbar.addAction(load_action)
     
     def update_mode_actions(self, current_mode):
         """Update checked state of mode actions."""

@@ -23,7 +23,65 @@ class DeviceTypes:
 
 class ConnectionTypes:
     """Constants for connection types."""
+    # Basic connection types
     ETHERNET = "ethernet"
     SERIAL = "serial"
     FIBER = "fiber"
     WIRELESS = "wireless"
+    
+    # Enterprise connection types
+    GIGABIT_ETHERNET = "gigabit_ethernet"
+    TEN_GIGABIT_ETHERNET = "10gig_ethernet"
+    FORTY_GIGABIT_ETHERNET = "40gig_ethernet"
+    HUNDRED_GIGABIT_ETHERNET = "100gig_ethernet"
+    FIBER_CHANNEL = "fiber_channel"
+    MPLS = "mpls"
+    POINT_TO_POINT = "p2p"
+    VPN = "vpn"
+    SDWAN = "sdwan"
+    SATELLITE = "satellite"
+    MICROWAVE = "microwave"
+    BLUETOOTH = "bluetooth"
+    CUSTOM = "custom"
+
+    # Dictionary mapping connection types to display names
+    DISPLAY_NAMES = {
+        ETHERNET: "Ethernet",
+        SERIAL: "Serial",
+        FIBER: "Fiber",
+        WIRELESS: "Wireless",
+        GIGABIT_ETHERNET: "Gigabit Ethernet (1GbE)",
+        TEN_GIGABIT_ETHERNET: "10 Gigabit Ethernet (10GbE)",
+        FORTY_GIGABIT_ETHERNET: "40 Gigabit Ethernet (40GbE)",
+        HUNDRED_GIGABIT_ETHERNET: "100 Gigabit Ethernet (100GbE)",
+        FIBER_CHANNEL: "Fiber Channel",
+        MPLS: "MPLS",
+        POINT_TO_POINT: "Point-to-Point",
+        VPN: "VPN Tunnel",
+        SDWAN: "SD-WAN",
+        SATELLITE: "Satellite",
+        MICROWAVE: "Microwave",
+        BLUETOOTH: "Bluetooth",
+        CUSTOM: "Custom Connection"
+    }
+
+    # Dictionary mapping connection types to default bandwidth values
+    DEFAULT_BANDWIDTHS = {
+        ETHERNET: "100 Mbps",
+        SERIAL: "2 Mbps",
+        FIBER: "1 Gbps",
+        WIRELESS: "54 Mbps",
+        GIGABIT_ETHERNET: "1 Gbps",
+        TEN_GIGABIT_ETHERNET: "10 Gbps",
+        FORTY_GIGABIT_ETHERNET: "40 Gbps",
+        HUNDRED_GIGABIT_ETHERNET: "100 Gbps",
+        FIBER_CHANNEL: "16 Gbps",
+        MPLS: "Variable",
+        POINT_TO_POINT: "100 Mbps",
+        VPN: "50 Mbps",
+        SDWAN: "Variable",
+        SATELLITE: "15 Mbps",
+        MICROWAVE: "1 Gbps",
+        BLUETOOTH: "3 Mbps",
+        CUSTOM: ""
+    }

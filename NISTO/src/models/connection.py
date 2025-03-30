@@ -85,7 +85,7 @@ class Connection(QGraphicsPathItem):
     STYLE_ORTHOGONAL = 1
     STYLE_CURVED = 2
     
-    def __init__(self, source_device, target_device, connection_type=None, label=None):
+    def __init__(self, source_device, target_device, connection_type=None, label=None, bandwidth=None, latency=None):
         super().__init__()
         
         # Create signals object
@@ -111,8 +111,8 @@ class Connection(QGraphicsPathItem):
         # Set connection properties
         self.connection_type = connection_type or ConnectionTypes.ETHERNET
         self.label_text = label or "Link"  # Default label text
-        self.bandwidth = ""
-        self.latency = ""
+        self.bandwidth = bandwidth or ""
+        self.latency = latency or ""
         
         # Visual properties
         self.routing_style = self.STYLE_STRAIGHT  # Default routing style
@@ -267,33 +267,53 @@ class Connection(QGraphicsPathItem):
     
     def set_style_for_type(self, connection_type):
         """Set the visual style based on the connection type."""
+        # Default style
+        style = {
+            'color': QColor(30, 30, 30),
+            'style': Qt.SolidLine,
+            'width': 2
+        }
+        
+        # Style based on connection type
         if connection_type == ConnectionTypes.ETHERNET:
-            # Ethernet - solid black line
-            self.line_color = QColor(0, 0, 0)
-            self.line_style = Qt.SolidLine
-            self.line_width = 2
+            style = {'color': QColor(0, 0, 0), 'style': Qt.SolidLine, 'width': 2}
         elif connection_type == ConnectionTypes.SERIAL:
-            # Serial - blue dashed line
-            self.line_color = QColor(0, 0, 255)
-            self.line_style = Qt.DashLine
-            self.line_width = 1.5
+            style = {'color': QColor(0, 0, 255), 'style': Qt.DashLine, 'width': 1.5}
         elif connection_type == ConnectionTypes.FIBER:
-            # Fiber - green solid line, thicker
-            self.line_color = QColor(0, 128, 0)
-            self.line_style = Qt.SolidLine
-            self.line_width = 3
+            style = {'color': QColor(0, 128, 0), 'style': Qt.SolidLine, 'width': 3}
         elif connection_type == ConnectionTypes.WIRELESS:
-            # Wireless - purple dotted line
-            self.line_color = QColor(128, 0, 128)
-            self.line_style = Qt.DotLine
-            self.line_width = 1.5
-        else:
-            # Default style
-            self.line_color = QColor(0, 0, 0)
-            self.line_style = Qt.SolidLine
-            self.line_width = 2
+            style = {'color': QColor(128, 0, 128), 'style': Qt.DotLine, 'width': 1.5}
+        elif connection_type == ConnectionTypes.GIGABIT_ETHERNET:
+            style = {'color': QColor(50, 50, 50), 'style': Qt.SolidLine, 'width': 2.5}
+        elif connection_type == ConnectionTypes.TEN_GIGABIT_ETHERNET:
+            style = {'color': QColor(0, 100, 200), 'style': Qt.SolidLine, 'width': 3}
+        elif connection_type == ConnectionTypes.FORTY_GIGABIT_ETHERNET:
+            style = {'color': QColor(0, 150, 200), 'style': Qt.SolidLine, 'width': 3.5}
+        elif connection_type == ConnectionTypes.HUNDRED_GIGABIT_ETHERNET:
+            style = {'color': QColor(0, 200, 200), 'style': Qt.SolidLine, 'width': 4}
+        elif connection_type == ConnectionTypes.FIBER_CHANNEL:
+            style = {'color': QColor(200, 100, 0), 'style': Qt.SolidLine, 'width': 3}
+        elif connection_type == ConnectionTypes.MPLS:
+            style = {'color': QColor(100, 0, 100), 'style': Qt.DashDotLine, 'width': 2.5}
+        elif connection_type == ConnectionTypes.POINT_TO_POINT:
+            style = {'color': QColor(0, 0, 100), 'style': Qt.SolidLine, 'width': 2}
+        elif connection_type == ConnectionTypes.VPN:
+            style = {'color': QColor(0, 100, 0), 'style': Qt.DashDotDotLine, 'width': 2}
+        elif connection_type == ConnectionTypes.SDWAN:
+            style = {'color': QColor(0, 128, 128), 'style': Qt.DashDotLine, 'width': 2.5}
+        elif connection_type == ConnectionTypes.SATELLITE:
+            style = {'color': QColor(128, 0, 0), 'style': Qt.DotLine, 'width': 2}
+        elif connection_type == ConnectionTypes.MICROWAVE:
+            style = {'color': QColor(200, 0, 0), 'style': Qt.DotLine, 'width': 1.5}
+        elif connection_type == ConnectionTypes.BLUETOOTH:
+            style = {'color': QColor(0, 0, 200), 'style': Qt.DashDotLine, 'width': 1.5}
+        elif connection_type == ConnectionTypes.CUSTOM:
+            style = {'color': QColor(50, 50, 50), 'style': Qt.SolidLine, 'width': 2}
         
         # Apply style
+        self.line_color = style['color']
+        self.line_style = style['style']
+        self.line_width = style['width']
         self._apply_style()
     
     def _apply_style(self):
@@ -422,6 +442,11 @@ class Connection(QGraphicsPathItem):
         edit_action.triggered.connect(self._start_label_editing)
         menu.addAction(edit_action)
         
+        # Add "Show Connection Info" action
+        info_action = QAction("Connection Info", self.scene().views()[0])
+        info_action.triggered.connect(self._show_connection_info)
+        menu.addAction(info_action)
+        
         # Add other possible actions
         delete_action = QAction("Delete Connection", self.scene().views()[0])
         delete_action.triggered.connect(self._delete_connection)
@@ -429,6 +454,36 @@ class Connection(QGraphicsPathItem):
         
         # Show the menu at the event position
         menu.exec_(event.screenPos())
+    
+    def _show_connection_info(self):
+        """Show a dialog with connection information."""
+        from PyQt5.QtWidgets import QMessageBox
+        
+        # Get connection type display name
+        from constants import ConnectionTypes
+        conn_type_display = ConnectionTypes.DISPLAY_NAMES.get(
+            self.connection_type, 
+            "Unknown Connection Type"
+        )
+        
+        # Build info message
+        info = f"Connection Type: {conn_type_display}\n"
+        info += f"Label: {self.label_text}\n"
+        
+        if self.bandwidth:
+            info += f"Bandwidth: {self.bandwidth}\n"
+        if self.latency:
+            info += f"Latency: {self.latency}\n"
+            
+        info += f"Source Device: {self.source_device.name}\n"
+        info += f"Target Device: {self.target_device.name}\n"
+        
+        # Show the info dialog
+        QMessageBox.information(
+            self.scene().views()[0], 
+            "Connection Information",
+            info
+        )
     
     def _start_label_editing(self):
         """Start editing the connection label."""

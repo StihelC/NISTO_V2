@@ -17,9 +17,26 @@ class ConnectionController:
         self.current_connection_style = Connection.STYLE_STRAIGHT
         self.last_connection = None
     
-    def on_add_connection_requested(self, source_device, target_device):
+    def on_add_connection_requested(self, source_device, target_device, connection_data=None):
         """Handle request to add a connection between two devices."""
-        self.create_connection(source_device, target_device)
+        if connection_data is None:
+            # Use defaults if no connection data provided (backward compatibility)
+            connection_data = {
+                'type': ConnectionTypes.ETHERNET,
+                'label': "Link",
+                'bandwidth': "",
+                'latency': ""
+            }
+            
+        # Create the connection with the given data
+        self.create_connection(
+            source_device, 
+            target_device, 
+            connection_data['type'], 
+            connection_data['label'],
+            connection_data.get('bandwidth', ''),
+            connection_data.get('latency', '')
+        )
     
     def on_delete_connection_requested(self, connection):
         """Handle request to delete a connection."""
@@ -36,7 +53,7 @@ class ConnectionController:
             # Notify through event bus
             self.event_bus.emit("connection_deleted", connection)
     
-    def create_connection(self, source_device, target_device, connection_type=None, label=None):
+    def create_connection(self, source_device, target_device, connection_type=None, label=None, bandwidth=None, latency=None):
         """Create a connection between two devices."""
         try:
             # Check if connection already exists
@@ -47,6 +64,12 @@ class ConnectionController:
             
             # Create the connection
             connection = Connection(source_device, target_device, connection_type, label)
+            
+            # Set additional properties if provided
+            if bandwidth:
+                connection.bandwidth = bandwidth
+            if latency:
+                connection.latency = latency
             
             # Apply the current connection style
             connection.set_routing_style(self.current_connection_style)
