@@ -199,3 +199,24 @@ class Boundary(QGraphicsRectItem):
             for view in scene.views():
                 view.viewport().update()
 
+    def update_color(self):
+        """Update boundary visual appearance after color change."""
+        if hasattr(self, 'color'):
+            # Apply the color to the boundary's brush and pen
+            brush = self.brush()
+            brush.setColor(self.color)
+            self.setBrush(brush)
+            
+            # Update the pen too for consistent appearance
+            pen = QPen(QColor(self.color.red(), self.color.green(), 
+                             self.color.blue(), 160), 2, Qt.SolidLine)
+            self.setPen(pen)
+            
+            # Force redraw
+            self.update()
+
+    def update_name(self):
+        """Update boundary label text after name change."""
+        if hasattr(self, 'label') and self.label:
+            self.label.setPlainText(self.name)
+

@@ -1,58 +1,46 @@
 import sys
+import logging
 from PyQt5.QtWidgets import QApplication
+
 from views.main_window import MainWindow
-from utils.event_bus import EventBus
-from controllers.device_controller import DeviceController
-from controllers.connection_controller import ConnectionController
-from controllers.boundary_controller import BoundaryController
 from controllers.command_manager import CommandManager
+from controllers.undo_redo_manager import UndoRedoManager
 
 def main():
+    # Configure logging
+    logging.basicConfig(level=logging.INFO, 
+                      format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
+    
+    # Create application
     app = QApplication(sys.argv)
     
-    # Create the main window
+    # Create main window
     main_window = MainWindow()
     
-    # Get references to objects initialized in the main window
-    canvas = main_window.canvas
-    event_bus = main_window.event_bus
+    # Setup command manager after window is created
+    # Pass the event_bus from main_window to UndoRedoManager
+    undo_redo_manager = UndoRedoManager(main_window.event_bus)
     
-    # Create command manager and connect it to controllers
-    command_manager = CommandManager(event_bus)
-    
-    # Save reference to command manager in main window
+    # Pass both undo_redo_manager and event_bus to CommandManager
+    command_manager = CommandManager(undo_redo_manager, main_window.event_bus)
     main_window.command_manager = command_manager
     
-    # Get references to controllers already created in the main window
-    device_controller = main_window.device_controller
-    connection_controller = main_window.connection_controller
-    boundary_controller = main_window.boundary_controller
+    # Now that command_manager is set up, create the properties controller
+    main_window.setup_properties_controller()
     
-    # Register controllers with the event bus
-    event_bus.register_controller('device_controller', device_controller)
-    event_bus.register_controller('connection_controller', connection_controller)
-    event_bus.register_controller('boundary_controller', boundary_controller)
+    # Setup controllers with undo/redo manager
+    main_window.device_controller.undo_redo_manager = undo_redo_manager
+    main_window.connection_controller.undo_redo_manager = undo_redo_manager
+    main_window.boundary_controller.undo_redo_manager = undo_redo_manager
     
-    # Update controllers with undo_redo_manager
-    device_controller.undo_redo_manager = command_manager.undo_redo_manager
-    boundary_controller.undo_redo_manager = command_manager.undo_redo_manager
-    connection_controller.undo_redo_manager = command_manager.undo_redo_manager
-    
-    # Update command manager with controller references
-    command_manager.set_controllers(
-        device_controller=device_controller,
-        boundary_controller=boundary_controller,
-        connection_controller=connection_controller
-    )
-    
-    # Connect event_bus to the canvas for item_moved events
-    canvas.event_bus = event_bus
-    
-    # Create edit menu with undo/redo functionality after command_manager is set
-    # This ensures we only have one Edit menu with undo/redo functionality
+    # Create edit menu (requires command_manager to be set)
     main_window._create_edit_menu()
     
+    # Show window
     main_window.show()
+    
+    # Run application
     sys.exit(app.exec_())
 
 if __name__ == "__main__":

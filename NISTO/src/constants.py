@@ -86,3 +86,26 @@ class ConnectionTypes:
         BLUETOOTH: "3 Mbps",
         CUSTOM: ""
     }
+
+    @classmethod
+    def get_all_types(cls):
+        """Return a list of all connection types."""
+        return [
+            cls.ETHERNET,
+            cls.SERIAL,
+            cls.FIBER, 
+            cls.WIRELESS,
+            cls.GIGABIT_ETHERNET,
+            cls.TEN_GIGABIT_ETHERNET,
+            cls.FORTY_GIGABIT_ETHERNET,
+            cls.HUNDRED_GIGABIT_ETHERNET,
+            cls.FIBER_CHANNEL,
+            cls.MPLS,
+            cls.POINT_TO_POINT,
+            cls.VPN,
+            cls.SDWAN,
+            cls.SATELLITE,
+            cls.MICROWAVE,
+            cls.BLUETOOTH,
+            cls.CUSTOM
+        ]

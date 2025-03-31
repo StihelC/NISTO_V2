@@ -413,3 +413,29 @@ class Device(QGraphicsItem):
             # Force update on all views
             for view in scene.views():
                 view.viewport().update()
+
+    def update_name(self):
+        """Update device name display after name change."""
+        if hasattr(self, 'text_item'):
+            self.text_item.setPlainText(self.name)
+            
+            # Center the text if needed
+            if hasattr(self, 'width'):
+                text_width = self.text_item.boundingRect().width()
+                text_x = (self.width - text_width) / 2
+                self.text_item.setPos(text_x, self.height + 5)
+
+    def update_color(self):
+        """Update device visual appearance after color change."""
+        if hasattr(self, 'color'):
+            # Set the color in properties dict
+            if hasattr(self, 'properties'):
+                self.properties['color'] = self.color
+            
+            # Update the visual appearance
+            if hasattr(self, 'rect_item'):
+                brush = QBrush(self.color)
+                self.rect_item.setBrush(brush)
+                
+                # Force redraw
+                self.update()

@@ -117,6 +117,18 @@ class UndoRedoManager(QObject):
         """Check if there are commands that can be redone."""
         return len(self.redo_stack) > 0
     
+    def get_next_undo(self):
+        """Get the next command to undo without removing it from stack."""
+        if self.can_undo():
+            return self.undo_stack[-1]
+        return None
+    
+    def get_next_redo(self):
+        """Get the next command to redo without removing it from stack."""
+        if self.can_redo():
+            return self.redo_stack[-1]
+        return None
+    
     def clear(self):
         """Clear both undo and redo stacks."""
         self.undo_stack.clear()

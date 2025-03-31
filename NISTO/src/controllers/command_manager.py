@@ -12,71 +12,94 @@ from controllers.commands import (
 class CommandManager(QObject):
     """Central manager for command creation and execution."""
     
-    def __init__(self, event_bus, device_controller=None, boundary_controller=None, connection_controller=None):
+    def __init__(self, undo_redo_manager, event_bus=None):
+        """Initialize the command manager with an undo/redo manager."""
         super().__init__()
         self.logger = logging.getLogger(__name__)
         
         # Create the undo-redo manager
-        self.undo_redo_manager = UndoRedoManager(event_bus)
-        
-        # Store controllers for command creation
-        self.device_controller = device_controller
-        self.boundary_controller = boundary_controller
-        self.connection_controller = connection_controller
+        self.undo_redo_manager = undo_redo_manager
         
         # Reference to event bus
         self.event_bus = event_bus
         
-        # Initialize event listeners
+        # Only set up event listeners if we have an event bus
+        if self.event_bus:
+            self._setup_event_listeners()
+    
+    def set_event_bus(self, event_bus):
+        """Set the event bus after initialization."""
+        self.event_bus = event_bus
         self._setup_event_listeners()
     
     def _setup_event_listeners(self):
-        """Set up event listeners for item movements."""
-        # Listen for item movement events to create MoveItemCommands
+        """Set up listeners for events that should create commands."""
+        if not self.event_bus:
+            self.logger.warning("Cannot set up event listeners: no event_bus available")
+            return
+            
+        # Listen for item movement events
         self.event_bus.on("item_moved", self.on_item_moved)
-        
-    def on_item_moved(self, item, old_pos, new_pos):
-        """Create and execute a command for item movement."""
-        command = MoveItemCommand(item, old_pos, new_pos)
-        self.undo_redo_manager.push_command(command)
     
-    def set_controllers(self, device_controller=None, boundary_controller=None, connection_controller=None):
-        """Set controller references after initialization."""
-        if device_controller:
-            self.device_controller = device_controller
-            device_controller.undo_redo_manager = self.undo_redo_manager
+    def on_item_moved(self, item, start_pos, end_pos):
+        """Handle item moved event."""
+        self.logger.info(f"Item moved: {item} from {start_pos} to {end_pos}")
         
-        if boundary_controller:
-            self.boundary_controller = boundary_controller
-            boundary_controller.undo_redo_manager = self.undo_redo_manager
-        
-        if connection_controller:
-            self.connection_controller = connection_controller
-            connection_controller.undo_redo_manager = self.undo_redo_manager
+        # Create and execute the move command
+        cmd = MoveItemCommand(item, start_pos, end_pos)
+        self.undo_redo_manager.push_command(cmd)
     
     def undo(self):
         """Undo the last command."""
-        return self.undo_redo_manager.undo()
+        if self.can_undo():
+            self.undo_redo_manager.undo()
+            self.logger.info("Undid last action")
+            return True
+        self.logger.info("Nothing to undo")
+        return False
     
     def redo(self):
         """Redo the last undone command."""
-        return self.undo_redo_manager.redo()
+        if self.can_redo():
+            self.undo_redo_manager.redo()
+            self.logger.info("Redid last undone action")
+            return True
+        self.logger.info("Nothing to redo")
+        return False
     
     def can_undo(self):
-        """Check if there are commands that can be undone."""
+        """Check if there is a command to undo."""
         return self.undo_redo_manager.can_undo()
     
     def can_redo(self):
-        """Check if there are commands that can be redone."""
+        """Check if there is a command to redo."""
         return self.undo_redo_manager.can_redo()
     
     def get_undo_text(self):
-        """Get the description of the next command to undo."""
-        return self.undo_redo_manager.get_undo_text()
+        """Get descriptive text for the next undo action."""
+        if self.can_undo():
+            try:
+                # Try to get the next command to undo
+                if hasattr(self.undo_redo_manager, 'get_next_undo'):
+                    command = self.undo_redo_manager.get_next_undo()
+                    if command:
+                        return f"Undo {command.description}"
+            except Exception as e:
+                self.logger.error(f"Error getting undo text: {str(e)}")
+        return "Undo"
     
     def get_redo_text(self):
-        """Get the description of the next command to redo."""
-        return self.undo_redo_manager.get_redo_text()
+        """Get descriptive text for the next redo action."""
+        if self.can_redo():
+            try:
+                # Try to get the next command to redo
+                if hasattr(self.undo_redo_manager, 'get_next_redo'):
+                    command = self.undo_redo_manager.get_next_redo()
+                    if command:
+                        return f"Redo {command.description}"
+            except Exception as e:
+                self.logger.error(f"Error getting redo text: {str(e)}")
+        return "Redo"
     
     def clear_history(self):
         """Clear the command history."""

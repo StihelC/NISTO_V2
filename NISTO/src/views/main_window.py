@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QDialog, QMessageBox, QAction
+from PyQt5.QtWidgets import QMainWindow, QDialog, QMessageBox, QAction, QDockWidget
 from PyQt5.QtCore import QPointF, QTimer, Qt
 from PyQt5.QtGui import QColor  # Removed QKeySequence import as it's not used
 import logging
@@ -14,6 +14,8 @@ from utils.event_bus import EventBus
 from models.device import Device
 from models.connection import Connection
 from models.boundary import Boundary
+from views.properties_panel import PropertiesPanel
+from controllers.properties_controller import PropertiesController
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -76,6 +78,26 @@ class MainWindow(QMainWindow):
         
         # Set initial mode
         self.set_mode(Modes.SELECT)
+
+        # Create properties panel
+        self.properties_panel = PropertiesPanel(self)
+        self.right_panel = QDockWidget("Properties", self)
+        self.right_panel.setWidget(self.properties_panel)
+        self.right_panel.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.right_panel)
+
+        # Initialize properties controller - defer its creation until command_manager is properly set in main.py
+        self.properties_controller = None
+
+    def setup_properties_controller(self):
+        """Set up the properties controller after command_manager is initialized."""
+        if self.properties_controller is None:
+            self.properties_controller = PropertiesController(
+                self.canvas,
+                self.properties_panel,
+                self.event_bus,
+                self.command_manager.undo_redo_manager if self.command_manager else None
+            )
 
     def _create_file_menu(self):
         """Create the File menu with save/load actions."""
@@ -183,12 +205,32 @@ class MainWindow(QMainWindow):
         reset_zoom_action = QAction("Reset Zoom", self)
         reset_zoom_action.setShortcut("Ctrl+0")
         reset_zoom_action.triggered.connect(self.canvas.reset_zoom)
-        view_menu.addAction(reset_zoom_action)  # FIX: This was a bug - should be reset_zoom_action
+        view_menu.addAction(reset_zoom_action)
+        
+        # Reset View action (zoom + center)
+        reset_view_action = QAction("Reset View to Home", self)
+        reset_view_action.setShortcut("Ctrl+Home")
+        reset_view_action.triggered.connect(self.canvas.reset_view)
+        view_menu.addAction(reset_view_action)
+        
+        # Set Home Position action
+        set_home_action = QAction("Set Current View as Home", self)
+        set_home_action.triggered.connect(self._set_current_as_home)
+        view_menu.addAction(set_home_action)
         
         view_menu.addSeparator()
         
         return view_menu
-    
+
+    def _set_current_as_home(self):
+        """Set the current view center as the home position."""
+        # Get the current center of the viewport in scene coordinates
+        viewport_center = self.canvas.mapToScene(
+            self.canvas.viewport().rect().center()
+        )
+        self.canvas.set_home_position(viewport_center)
+        self.statusBar().showMessage(f"Home position set to ({viewport_center.x():.1f}, {viewport_center.y():.1f})")
+
     def _setup_shortcuts(self):
         """Set up additional keyboard shortcuts."""
         # These shortcuts work globally in the main window

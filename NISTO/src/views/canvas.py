@@ -190,6 +190,10 @@ class SelectMode(CanvasMode):
         self.selection_box = SelectionBox(canvas.scene())
         self.drag_started = False
         self.is_selecting_box = False
+        self.mouse_press_pos = None
+        self.drag_threshold = 5  # Minimum drag distance to start selection box
+        self.click_item = None   # Store the item that was clicked on
+        self.logger = logging.getLogger(__name__) # Add logger instance
     
     def activate(self):
         """Enable dragging when select mode is active."""
@@ -200,6 +204,14 @@ class SelectMode(CanvasMode):
         self.set_devices_draggable(False)
     
     def handle_mouse_press(self, event, scene_pos, item):
+        # Store the initial press position for later comparison
+        self.mouse_press_pos = scene_pos
+        self.is_selecting_box = False
+        self.drag_started = False
+        self.click_item = item  # Store the clicked item
+        
+        self.logger.debug(f"SelectMode: Mouse pressed at {scene_pos.x():.1f}, {scene_pos.y():.1f}, item: {item.__class__.__name__ if item else 'None'}")
+        
         # For double clicks on boundaries, start editing the label
         if event.type() == QEvent.MouseButtonDblClick and isinstance(item, Boundary):
             if item.label:
@@ -208,11 +220,13 @@ class SelectMode(CanvasMode):
         
         # Handle left button press for potential box selection
         if event.button() == Qt.LeftButton:
-            # If clicking on empty space, start box selection
+            # If clicking on empty space, prepare for potential box selection
+            # but don't start drawing yet (wait for actual drag movement)
             if not item:
-                self.is_selecting_box = True
-                self.selection_box.start(scene_pos)
+                self.logger.debug("SelectMode: Clicked on empty space, preparing for possible box selection")
                 return True  # We're handling it
+            else:
+                self.logger.debug(f"SelectMode: Clicked on item {item.__class__.__name__}")
             
             # If shift is not pressed, clear selection and let Qt handle it
             if not (event.modifiers() & Qt.ShiftModifier):
@@ -224,40 +238,87 @@ class SelectMode(CanvasMode):
     
     def mouse_move_event(self, event):
         """Update selection box during drag."""
-        if event.buttons() & Qt.LeftButton and self.is_selecting_box:
+        if event.buttons() & Qt.LeftButton and self.mouse_press_pos:
+            # Get current scene position
             scene_pos = self.canvas.mapToScene(event.pos())
-            self.selection_box.update(scene_pos)
-            return True
+            
+            # Calculate distance moved
+            dx = scene_pos.x() - self.mouse_press_pos.x()
+            dy = scene_pos.y() - self.mouse_press_pos.y()
+            dist = (dx*dx + dy*dy) ** 0.5
+            
+            # Occasionally log mouse movement for debugging
+            if int(scene_pos.x()) % 100 == 0 and int(scene_pos.y()) % 100 == 0:
+                self.logger.debug(f"SelectMode: Mouse move - dist: {dist:.1f}, drag_started: {self.drag_started}, " 
+                                 f"is_selecting_box: {self.is_selecting_box}, click_item: {self.click_item.__class__.__name__ if self.click_item else 'None'}")
+            
+            # If we're already dragging an item, don't start selection box
+            if self.click_item:
+                if not self.drag_started and dist > self.drag_threshold:
+                    self.drag_started = True
+                    self.logger.debug(f"SelectMode: Started dragging item: {self.click_item.__class__.__name__}")
+                return False
+            
+            # Only start selection box if:
+            # 1. No item was clicked initially (click_item is None)
+            # 2. Moved past threshold distance
+            # 3. Not already in drag mode
+            if not self.click_item and dist > self.drag_threshold and not self.drag_started and not self.is_selecting_box:
+                self.is_selecting_box = True
+                self.logger.debug(f"SelectMode: Started selection box at {self.mouse_press_pos.x():.1f}, {self.mouse_press_pos.y():.1f}")
+                # Start the selection box now that we've passed the threshold
+                self.selection_box.start(self.mouse_press_pos)
+                
+                # Update selection box size
+                self.selection_box.update(scene_pos)
+                return True
+            elif self.is_selecting_box:
+                # Update existing selection box
+                self.selection_box.update(scene_pos)
+                return True
+        
         return False
     
     def mouse_release_event(self, event, scene_pos=None, item=None):
         """Finalize selection on mouse release."""
-        if event.button() == Qt.LeftButton and self.is_selecting_box:
+        if event.button() == Qt.LeftButton:
             scene_pos = scene_pos or self.canvas.mapToScene(event.pos())
             
-            # Finish the box selection
-            selection_rect = self.selection_box.finish()
-            if selection_rect:
-                # Get items in the selection rectangle
-                items = self.canvas.scene().items(selection_rect, Qt.IntersectsItemShape)
-                
-                # If not extending selection (shift not pressed), clear current selection
-                if not (event.modifiers() & Qt.ShiftModifier):
-                    self.canvas.scene().clearSelection()
-                
-                # Select all valid items in the selection rectangle
-                for item in items:
-                    if isinstance(item, (Device, Connection, Boundary)):
-                        # Don't select temp graphics or helper items
-                        if not item.parentItem():  # Only top-level items
-                            item.setSelected(True)
+            self.logger.debug(f"SelectMode: Mouse released at {scene_pos.x():.1f}, {scene_pos.y():.1f}, "
+                             f"is_selecting_box: {self.is_selecting_box}, drag_started: {self.drag_started}")
             
-            self.is_selecting_box = False
-            return True
+            # Only process selection box if we were actually creating one
+            if self.is_selecting_box:
+                self.logger.debug("SelectMode: Finalizing selection box")
+                # Finish the box selection
+                selection_rect = self.selection_box.finish()
+                if selection_rect:
+                    # Get items in the selection rectangle
+                    items = self.canvas.scene().items(selection_rect, Qt.IntersectsItemShape)
+                    
+                    # If not extending selection (shift not pressed), clear current selection
+                    if not (event.modifiers() & Qt.ShiftModifier):
+                        self.canvas.scene().clearSelection()
+                    
+                    # Select all valid items in the selection rectangle
+                    for item in items:
+                        if isinstance(item, (Device, Connection, Boundary)):
+                            # Don't select temp graphics or helper items
+                            if not item.parentItem():  # Only top-level items
+                                item.setSelected(True)
+                    
+                    self.logger.debug(f"SelectMode: Selected {len(items)} items in selection box")
+                
+                self.is_selecting_box = False
+                return True
+            
+            # Reset state variables
+            self.logger.debug("SelectMode: Resetting drag state variables")
+            self.drag_started = False
+            self.mouse_press_pos = None
+            self.click_item = None
+            
         return False
-    
-    def cursor(self):
-        return Qt.ArrowCursor
 
 class AddDeviceMode(CanvasMode):
     """Mode for adding devices to the canvas."""
@@ -562,6 +623,7 @@ class Canvas(QGraphicsView):
     delete_boundary_requested = pyqtSignal(object)  # boundary
     delete_selected_requested = pyqtSignal()  # Signal for deleting all selected items
     statusMessage = pyqtSignal(str)  # Signal for status bar messages
+    selection_changed = pyqtSignal(list)  # Signal for selection changes
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -590,8 +652,8 @@ class Canvas(QGraphicsView):
         self.setRenderHint(QPainter.SmoothPixmapTransform)
         self.setRenderHint(QPainter.TextAntialiasing)
         
-        # Set scene rectangle (optional, can be adjusted)
-        self._scene.setSceneRect(-2000, -2000, 4000, 4000)
+        # Set scene rectangle to support large networks (10,000+ devices)
+        self._scene.setSceneRect(-50000, -50000, 100000, 100000)
         
         # Setup appearance
         self.setBackgroundBrush(QBrush(QColor(240, 240, 240)))
@@ -614,17 +676,26 @@ class Canvas(QGraphicsView):
         # Set initial mode
         self.set_mode(Modes.SELECT)
         
-        # Initialize zoom settings
+        # Initialize zoom settings with more conservative limits
         self.zoom_factor = 1.15  # Zoom in/out factor per step
-        self.min_zoom = 0.1     # Minimum zoom level
-        self.max_zoom = 5.0     # Maximum zoom level
-        self.current_zoom = 1.0  # Current zoom level
+        self.min_zoom = 0.05     # Minimum zoom level (5%)
+        self.max_zoom = 2.5      # Maximum zoom level (250%)
+        self.current_zoom = 1.0  # Current zoom level (100%)
+        self.initial_transform = self.transform()  # Store initial transform
+        
+        # Store the initial viewport center point
+        self.home_position = QPointF(0, 0)  # Default center of the view
         
         # Enable wheel events
         self.setDragMode(QGraphicsView.RubberBandDrag)
         
         # Set viewport update mode to get smoother updates
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        
+        # Variables for canvas dragging (panning)
+        self._is_panning = False
+        self._pan_start_x = 0
+        self._pan_start_y = 0
     
     def _setup_modes(self):
         """Initialize all available interaction modes."""
@@ -655,31 +726,65 @@ class Canvas(QGraphicsView):
     
     def mousePressEvent(self, event):
         """Handle mouse press events."""
+        # Middle mouse button or Shift+Left button for canvas panning
+        if event.button() == Qt.MiddleButton or (event.button() == Qt.LeftButton and event.modifiers() & Qt.ShiftModifier):
+            self._is_panning = True
+            self._pan_start_x = event.x()
+            self._pan_start_y = event.y()
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
+            
         # For tracking item movements
         if event.button() == Qt.LeftButton and self.current_mode and isinstance(self.current_mode, SelectMode):
             item = self.get_item_at(event.pos())
             if item and (isinstance(item, Device) or isinstance(item, Boundary)):
                 self._drag_start_pos = item.scenePos()
                 self._drag_item = item
+                self.logger.debug(f"Canvas: Started dragging {item.__class__.__name__} at ({self._drag_start_pos.x():.1f}, {self._drag_start_pos.y():.1f})")
         
-        # Call the original method
+        # Call the original method but don't pass event; we'll handle it explicitly for the mode
         super().mousePressEvent(event)
         
         # Let the active mode handle the event
         if self.current_mode:
             scene_pos = self.mapToScene(event.pos())
             item = self.get_item_at(event.pos())
-            self.current_mode.handle_mouse_press(event, scene_pos, item)
+            handled = self.current_mode.handle_mouse_press(event, scene_pos, item)
+            self.logger.debug(f"Canvas: Mouse press handled by {self.current_mode.name}: {handled}")
+        
+        # Emit selection changed signal
+        self.selection_changed.emit(self.scene().selectedItems())
     
     def mouseMoveEvent(self, event):
         """Handle mouse move events."""
         try:
-            # Only debug occasionally to avoid console spam
-            if event.pos().x() % 100 == 0 and event.pos().y() % 100 == 0:
-                self.logger.debug(f"Canvas: mouseMoveEvent at {event.pos()}")
+            # Handle canvas panning
+            if self._is_panning:
+                # Calculate how far the mouse has moved
+                dx = event.x() - self._pan_start_x
+                dy = event.y() - self._pan_start_y
                 
+                # Update the starting point
+                self._pan_start_x = event.x()
+                self._pan_start_y = event.y()
+                
+                # Pan the view by the amount the mouse moved
+                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - dx)
+                self.verticalScrollBar().setValue(self.verticalScrollBar().value() - dy)
+                
+                event.accept()
+                return
+            
+            # Only debug occasionally to avoid console spam
+            if event.pos().x() % 200 == 0 and event.pos().y() % 200 == 0:
+                self.logger.debug(f"Canvas: mouseMoveEvent at {event.pos().x()}, {event.pos().y()}")
+            
+            # Let the mode manager handle the event first
             if not self.mode_manager.handle_event("mouse_move_event", event):
+                # If the mode didn't handle it, pass to default implementation
                 super().mouseMoveEvent(event)
+                
         except Exception as e:
             self.logger.error(f"Error in mouseMoveEvent: {str(e)}")
             import traceback
@@ -687,14 +792,27 @@ class Canvas(QGraphicsView):
     
     def mouseReleaseEvent(self, event):
         """Handle mouse release events."""
+        # End canvas panning
+        if self._is_panning and (event.button() == Qt.MiddleButton or event.button() == Qt.LeftButton):
+            self._is_panning = False
+            self.setCursor(Qt.ArrowCursor)
+            event.accept()
+            return
+            
         # Track item movements for undo/redo
         if hasattr(self, '_drag_start_pos') and hasattr(self, '_drag_item'):
             if self._drag_item and self._drag_start_pos:
                 current_pos = self._drag_item.scenePos()
                 if current_pos != self._drag_start_pos:
                     # Calculate actual item position difference
-                    if abs(current_pos.x() - self._drag_start_pos.x()) > 2 or abs(current_pos.y() - self._drag_start_pos.y()) > 2:
-                        # Only record meaningful movements (more than a few pixels)
+                    dx = current_pos.x() - self._drag_start_pos.x()
+                    dy = current_pos.y() - self._drag_start_pos.y()
+                    dist = (dx*dx + dy*dy) ** 0.5
+                    
+                    if dist > 2:  # Only record meaningful movements (more than 2 pixels)
+                        self.logger.debug(f"Canvas: Dragged item from ({self._drag_start_pos.x():.1f}, {self._drag_start_pos.y():.1f}) "
+                                         f"to ({current_pos.x():.1f}, {current_pos.y():.1f}), distance: {dist:.1f}")
+                        
                         if hasattr(self, 'event_bus') and self.event_bus:
                             self.event_bus.emit("item_moved", self._drag_item, self._drag_start_pos, current_pos)
         
@@ -709,10 +827,21 @@ class Canvas(QGraphicsView):
         if self.current_mode:
             scene_pos = self.mapToScene(event.pos())
             item = self.get_item_at(event.pos())
-            self.current_mode.mouse_release_event(event, scene_pos, item)
+            handled = self.current_mode.mouse_release_event(event, scene_pos, item)
+            self.logger.debug(f"Canvas: Mouse release handled by {self.current_mode.name}: {handled}")
+        
+        # After handling mouse release, emit selection changed signal
+        self.selection_changed.emit(self.scene().selectedItems())
     
     def keyPressEvent(self, event):
         """Handle key press events."""
+        # If space bar is pressed, switch to pan mode temporarily
+        if event.key() == Qt.Key_Space:
+            self.setCursor(Qt.OpenHandCursor)
+            self._temp_pan_mode = True
+            event.accept()
+            return
+            
         # Handle delete key for selected items
         if event.key() == Qt.Key_Delete:
             selected_items = self.scene().selectedItems()
@@ -725,6 +854,17 @@ class Canvas(QGraphicsView):
         # If not handled above, pass to mode manager or parent
         if not self.mode_manager.handle_event("key_press_event", event):
             super().keyPressEvent(event)
+    
+    def keyReleaseEvent(self, event):
+        """Handle key release events."""
+        # If space bar is released, exit pan mode
+        if event.key() == Qt.Key_Space and hasattr(self, '_temp_pan_mode'):
+            self.setCursor(Qt.ArrowCursor)
+            self._temp_pan_mode = False
+            event.accept()
+            return
+            
+        super().keyReleaseEvent(event)
     
     def scene(self):
         """Get the graphics scene."""
@@ -936,7 +1076,12 @@ class Canvas(QGraphicsView):
         
         # Calculate zoom factor based on wheel direction
         zoom_direction = 1 if event.angleDelta().y() > 0 else -1
-        zoom_step = self.zoom_factor ** zoom_direction
+        
+        # Use a smaller zoom step for finer control when very zoomed out
+        if self.current_zoom < 0.2 and zoom_direction < 0:
+            zoom_step = (self.zoom_factor ** zoom_direction) * 0.8
+        else:
+            zoom_step = self.zoom_factor ** zoom_direction
         
         # Calculate new zoom level
         new_zoom = self.current_zoom * zoom_step
@@ -945,10 +1090,17 @@ class Canvas(QGraphicsView):
         if new_zoom < self.min_zoom:
             zoom_step = self.min_zoom / self.current_zoom
             new_zoom = self.min_zoom
+            self.logger.info(f"Reached minimum zoom limit: {self.min_zoom}")
         elif new_zoom > self.max_zoom:
             zoom_step = self.max_zoom / self.current_zoom
             new_zoom = self.max_zoom
+            self.logger.info(f"Reached maximum zoom limit: {self.max_zoom}")
         
+        # If we're approaching extreme values, reset to prevent precision issues
+        if abs(new_zoom - self.current_zoom) < 0.0001:
+            self.logger.warning("Zoom difference too small, skipping to prevent precision issues")
+            return
+            
         # Update current zoom level
         self.current_zoom = new_zoom
         
@@ -961,7 +1113,11 @@ class Canvas(QGraphicsView):
         self.translate(delta.x(), delta.y())
         
         # Log the zoom level
-        self.logger.debug(f"Zoom level: {new_zoom:.2f}")
+        self.logger.debug(f"Zoom level: {new_zoom:.3f}")
+        
+        # Update the status bar with current zoom percentage
+        zoom_percentage = int(self.current_zoom * 100)
+        self.statusMessage.emit(f"Zoom: {zoom_percentage}%")
         
         # Update the view
         self.update()
@@ -986,6 +1142,10 @@ class Canvas(QGraphicsView):
         # Log the zoom level
         self.logger.debug(f"Zoom in: {new_zoom:.2f}")
         
+        # Update status bar
+        zoom_percentage = int(self.current_zoom * 100)
+        self.statusMessage.emit(f"Zoom: {zoom_percentage}%")
+        
         # Update the view
         self.update()
     
@@ -1009,23 +1169,59 @@ class Canvas(QGraphicsView):
         # Log the zoom level
         self.logger.debug(f"Zoom out: {new_zoom:.2f}")
         
+        # Update status bar
+        zoom_percentage = int(self.current_zoom * 100)
+        self.statusMessage.emit(f"Zoom: {zoom_percentage}%")
+        
         # Update the view
         self.update()
     
     def reset_zoom(self):
-        """Reset zoom level to 100%."""
-        # Calculate zoom step to get back to 1.0
-        zoom_step = 1.0 / self.current_zoom
+        """Reset zoom level to 100% and return to the initial transform."""
+        # Reset transform completely to avoid accumulated errors
+        self.resetTransform()
         
         # Update current zoom level
         self.current_zoom = 1.0
         
-        # Apply zoom using scale
-        self.scale(zoom_step, zoom_step)
-        
         # Log the zoom level
         self.logger.debug("Zoom reset to 1.0")
         
+        # Update status bar
+        self.statusMessage.emit("Zoom: 100%")
+        
         # Update the view
         self.update()
+    
+    def reset_view(self):
+        """Reset view to home position and default zoom."""
+        # Reset zoom first
+        self.reset_zoom()
+        
+        # Center on home position (0, 0 by default)
+        self.centerOn(self.home_position)
+        
+        # Update status bar
+        self.statusMessage.emit("View reset to home position")
+        
+        # Update the view
+        self.update()
+    
+    def set_home_position(self, pos=None):
+        """Set the home position for the view."""
+        if pos is None:
+            # If no position is provided, use the center of all items
+            items_rect = self.scene().itemsBoundingRect()
+            if not items_rect.isEmpty():
+                pos = items_rect.center()
+            else:
+                pos = QPointF(0, 0)
+                
+        self.home_position = pos
+        self.logger.debug(f"Home position set to ({pos.x():.1f}, {pos.y():.1f})")
+        
+        # Update status bar
+        self.statusMessage.emit("Home position updated")
+    
+    # ...existing code...
 

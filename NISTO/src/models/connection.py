@@ -649,3 +649,8 @@ class Connection(QGraphicsPathItem):
         if self.scene():
             scene_path = self.mapToScene(self.boundingRect()).boundingRect()
             self.scene().update(scene_path)
+
+    def update_label(self):
+        """Update connection label text."""
+        if hasattr(self, 'label_item') and self.label_item and hasattr(self, 'label_text'):
+            self.label_item.setPlainText(self.label_text)
