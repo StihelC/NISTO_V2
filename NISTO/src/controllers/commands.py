@@ -18,9 +18,19 @@ class AddDeviceCommand(Command):
         self.properties = properties or {}
         self.custom_icon_path = custom_icon_path
         self.created_device = None
+        self.logger = logging.getLogger(__name__)
     
     def execute(self):
         """Create and add the device."""
+        # Check if we're in a bulk creation process
+        in_bulk = hasattr(self.device_controller, '_in_bulk_creation') and self.device_controller._in_bulk_creation
+        self.logger.debug(f"CMD: AddDeviceCommand execute for {self.name}, in_bulk_creation={in_bulk}")
+        
+        if in_bulk:
+            # In bulk creation, the device was already created directly
+            self.logger.debug(f"CMD: Skipping device creation for {self.name} (already created in bulk)")
+            return None
+        
         self.created_device = self.device_controller._create_device(
             self.name, 
             self.device_type, 
@@ -28,17 +38,26 @@ class AddDeviceCommand(Command):
             self.properties,
             self.custom_icon_path
         )
+        self.logger.debug(f"CMD: Created device {self.name} through command execution")
         return self.created_device
     
     def undo(self):
         """Remove the device."""
         if self.created_device:
             # Set flag to prevent recursive command creation
-            self.device_controller.undo_redo_manager.is_executing_command = True
+            if hasattr(self.device_controller, 'undo_redo_manager') and self.device_controller.undo_redo_manager:
+                self.device_controller.undo_redo_manager.is_executing_command = True
+            
             # Delete the device
             self.device_controller.on_delete_device_requested(self.created_device)
+            
             # Reset flag
-            self.device_controller.undo_redo_manager.is_executing_command = False
+            if hasattr(self.device_controller, 'undo_redo_manager') and self.device_controller.undo_redo_manager:
+                self.device_controller.undo_redo_manager.is_executing_command = False
+                
+            # Force canvas update
+            if hasattr(self.device_controller, 'canvas') and self.device_controller.canvas:
+                self.device_controller.canvas.viewport().update()
 
 
 class DeleteDeviceCommand(Command):
@@ -88,6 +107,10 @@ class DeleteDeviceCommand(Command):
             self.properties,
             self.custom_icon_path
         )
+        
+        # Force canvas update
+        if hasattr(self.device_controller, 'canvas') and self.device_controller.canvas:
+            self.device_controller.canvas.viewport().update()
         
         # TODO: Reconnect the device's connections
         # This would require access to the connection controller and a way to find devices by ID
@@ -251,6 +274,7 @@ class CompositeCommand(Command):
         self.logger = logging.getLogger(__name__)
         self.completed_commands = []  # Track successfully executed commands
         self.undo_redo_manager = None  # Will be set from outside
+        self._device_commands = []  # Track device commands specifically
     
     def add_command(self, command):
         """Add a command to the composite."""
@@ -260,39 +284,52 @@ class CompositeCommand(Command):
                 command.undo_redo_manager = self.undo_redo_manager
         
         self.commands.append(command)
+        self.logger.debug(f"COMPOSITE: Added command {command.__class__.__name__}, total={len(self.commands)}")
     
     def execute(self):
         """Execute all sub-commands."""
+        self.logger.debug(f"COMPOSITE: Executing composite command with {len(self.commands)} sub-commands")
         # Mark that we're in a composite command execution
         if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
+            old_state = self.undo_redo_manager.is_executing_command
             self.undo_redo_manager.is_executing_command = True
+            self.logger.debug(f"COMPOSITE: Set is_executing_command to True (was {old_state})")
         
         # Clear completed commands list
         self.completed_commands.clear()
             
-        for idx, cmd in enumerate(self.commands):
-            try:
-                # Store the result of the execution
-                result = cmd.execute()
-                self.completed_commands.append(cmd)  # Track successful executions
-                self.logger.debug(f"Executed command {idx}: {cmd.__class__.__name__}")
-                
-                # If the command is an AddDeviceCommand, store the created device
-                if isinstance(cmd, AddDeviceCommand) and result:
-                    cmd.created_device = result
-            except Exception as e:
-                self.logger.error(f"Error executing command {idx}: {str(e)}")
-                import traceback
-                traceback.print_exc()
-            
-        # Reset the flag when done
-        if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
-            self.undo_redo_manager.is_executing_command = False
+        try:
+            for idx, cmd in enumerate(self.commands):
+                try:
+                    # Store the result of the execution
+                    self.logger.debug(f"COMPOSITE: Executing sub-command {idx}: {cmd.__class__.__name__}")
+                    result = cmd.execute()
+                    self.completed_commands.append(cmd)  # Track successful executions
+                    
+                    # Store references to created objects
+                    if isinstance(cmd, AddDeviceCommand) and result:
+                        cmd.created_device = result
+                        self.logger.debug(f"COMPOSITE: Stored device reference for {cmd.__class__.__name__}")
+                    elif isinstance(cmd, AddConnectionCommand) and result:
+                        cmd.created_connection = result
+                        self.logger.debug(f"COMPOSITE: Stored connection reference for {cmd.__class__.__name__}")
+                except Exception as e:
+                    self.logger.error(f"COMPOSITE: Error executing command {idx}: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+        finally:
+            # Reset the flag when done
+            if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
+                self.logger.debug(f"COMPOSITE: Restoring is_executing_command to {old_state}")
+                self.undo_redo_manager.is_executing_command = old_state
         
+        self.logger.debug(f"COMPOSITE: Completed execution with {len(self.completed_commands)} successful commands")
         return True
     
     def undo(self):
         """Undo all sub-commands in reverse order."""
+        self.logger.debug(f"COMPOSITE UNDO: Starting undo of composite command with {len(self.commands)} sub-commands")
+        
         # Mark that we're in a composite command undo
         if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
             old_state = self.undo_redo_manager.is_executing_command
@@ -300,16 +337,50 @@ class CompositeCommand(Command):
             
         # Use the completed commands list if available, otherwise use the commands list
         commands_to_undo = list(reversed(self.completed_commands if self.completed_commands else self.commands))
+        
+        canvas = None
+        
+        try:
+            # Track how many commands of each type were undone
+            undone_counts = {"AddDeviceCommand": 0, "AddConnectionCommand": 0, "Other": 0}
             
-        for idx, cmd in enumerate(commands_to_undo):
-            try:
-                cmd.undo()
-                self.logger.debug(f"Undone command {len(commands_to_undo) - idx - 1}: {cmd.__class__.__name__}")
-            except Exception as e:
-                self.logger.error(f"Error undoing command {len(commands_to_undo) - idx - 1}: {str(e)}")
-                import traceback
-                traceback.print_exc()
+            for idx, cmd in enumerate(commands_to_undo):
+                try:
+                    self.logger.debug(f"COMPOSITE UNDO: Undoing command {idx}: {cmd.__class__.__name__}")
+                    result = cmd.undo()
+                    
+                    # Count by command type
+                    if isinstance(cmd, AddDeviceCommand):
+                        undone_counts["AddDeviceCommand"] += 1
+                    elif isinstance(cmd, AddConnectionCommand):
+                        undone_counts["AddConnectionCommand"] += 1
+                    else:
+                        undone_counts["Other"] += 1
+                    
+                    # Find a canvas reference if possible
+                    if not canvas:
+                        if hasattr(cmd, 'device_controller') and hasattr(cmd.device_controller, 'canvas'):
+                            canvas = cmd.device_controller.canvas
+                        elif hasattr(cmd, 'boundary_controller') and hasattr(cmd.boundary_controller, 'canvas'):
+                            canvas = cmd.boundary_controller.canvas
+                        elif hasattr(cmd, 'connection_controller') and hasattr(cmd.connection_controller, 'canvas'):
+                            canvas = cmd.connection_controller.canvas
+                except Exception as e:
+                    self.logger.error(f"COMPOSITE UNDO: Error undoing command {idx}: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
             
-        # Reset the flag when done
-        if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
-            self.undo_redo_manager.is_executing_command = old_state
+            self.logger.debug(f"COMPOSITE UNDO: Completed undo. Undone commands: {undone_counts}")
+            
+        finally:
+            # Force canvas update at the end of all undos
+            if canvas:
+                canvas.viewport().update()
+                # Also update all scene views
+                if canvas.scene():
+                    for view in canvas.scene().views():
+                        view.viewport().update()
+                
+            # Reset the flag when done
+            if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
+                self.undo_redo_manager.is_executing_command = old_state

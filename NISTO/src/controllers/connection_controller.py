@@ -4,6 +4,7 @@ import traceback
 
 from models.connection import Connection
 from controllers.commands import AddConnectionCommand, DeleteConnectionCommand
+from constants import ConnectionTypes
 
 class ConnectionController:
     """Controller for managing connection-related operations."""
@@ -102,69 +103,55 @@ class ConnectionController:
             traceback.print_exc()
 
     def create_connection(self, source_device, target_device, source_port=None, target_port=None, properties=None):
-        """Create a new connection between devices."""
-        if not source_device or not target_device:
-            self.logger.error("Cannot create connection: Missing source or target device")
-            return None
-
+        """Create a connection between two devices."""
         try:
-            self.logger.info(f"Creating connection from '{source_device.name}' to '{target_device.name}'")
+            # Create the connection object
+            connection = Connection(source_device, target_device)
             
-            # If ports are not specified, determine the closest connection points
-            if not source_port:
-                source_port = source_device.get_nearest_port(target_device.get_center_position())
-            if not target_port:
-                target_port = target_device.get_nearest_port(source_device.get_center_position())
+            # Determine connection type - check if it's in the expected format
+            if properties and 'type' in properties:
+                connection_type = properties['type']
+            elif properties and 'connection_type' in properties:
+                connection_type = properties['connection_type']
+            else:
+                connection_type = ConnectionTypes.ETHERNET
                 
-            # Debug the connection port information
-            self.logger.debug(f"Source port: ({source_port.x()}, {source_port.y()})")
-            self.logger.debug(f"Target port: ({target_port.x()}, {target_port.y()})")
+            connection.connection_type = connection_type
             
-            # Create connection object
-            connection = Connection(source_device, target_device, source_port, target_port)
+            # Set connection label using proper display name
+            if properties and 'label' in properties and properties['label']:
+                connection.label_text = properties['label']
+            elif properties and 'label_text' in properties and properties['label_text']:
+                connection.label_text = properties['label_text']
+            else:
+                # Use display name directly from ConnectionTypes
+                connection.label_text = ConnectionTypes.DISPLAY_NAMES.get(connection_type)
             
-            # Set properties if provided
+            # Set additional properties
             if properties:
-                for key, value in properties.items():
-                    # Skip None values
-                    if value is not None:
-                        self.logger.debug(f"Setting property {key}={value}")
-                        setattr(connection, key, value)
-                        
-                # Ensure label text is set correctly
-                if 'label_text' in properties and properties['label_text']:
-                    connection.label_text = properties['label_text']  # Use preferred name from properties
-                    self.logger.debug(f"Setting label_text to '{properties['label_text']}'")
-                elif 'connection_type' in properties:
-                    # Use ConnectionTypes display name
-                    from constants import ConnectionTypes
-                    display_name = ConnectionTypes.DISPLAY_NAMES.get(properties['connection_type'], "Link")
-                    connection.label_text = display_name
-                    self.logger.debug(f"Setting label_text from connection_type to '{display_name}'")
-                
-                # If the connection_type is set, update the style
-                if 'connection_type' in properties and hasattr(connection, 'set_style_for_type'):
-                    connection.set_style_for_type(properties['connection_type'])
+                if 'bandwidth' in properties:
+                    connection.bandwidth = properties['bandwidth']
+                if 'latency' in properties:
+                    connection.latency = properties['latency']
             
             # Add to scene
-            scene = self.canvas.scene()
-            scene.addItem(connection)
+            self.canvas.scene().addItem(connection)
             
-            # Add to connections list
+            # Track in connections list
             self.canvas.connections.append(connection)
             
             # Notify through event bus
             self.event_bus.emit("connection_created", connection)
             
+            self.logger.info(f"Creating connection from '{source_device.name}' to '{target_device.name}'")
+            
             return connection
         
         except Exception as e:
             self.logger.error(f"Error creating connection: {str(e)}")
-            import traceback
             traceback.print_exc()
-            self._show_error(f"Failed to create connection: {str(e)}")
             return None
-    
+
     def _show_error(self, message):
         """Show error message dialog."""
         QMessageBox.critical(self.canvas.parent(), "Error", message)

@@ -39,13 +39,19 @@ class UndoRedoManager(QObject):
     
     def push_command(self, command):
         """Push a command onto the undo stack and execute it."""
+        self.logger.debug(f"UNDO_REDO: Pushing command {command.__class__.__name__}: {command.description}")
         # Clear redo stack when a new command is executed
         self.redo_stack.clear()
         
         # Execute the command
+        old_state = self.is_executing_command
         self.is_executing_command = True
+        self.logger.debug(f"UNDO_REDO: Set is_executing_command to True (was {old_state})")
+        
         command.execute()
-        self.is_executing_command = False
+        
+        self.is_executing_command = old_state
+        self.logger.debug(f"UNDO_REDO: Restored is_executing_command to {old_state}")
         
         # Add to undo stack
         self.undo_stack.append(command)
@@ -54,24 +60,38 @@ class UndoRedoManager(QObject):
         if len(self.undo_stack) > self.max_stack_size:
             self.undo_stack.pop(0)
         
-        self.logger.debug(f"Command executed: {command.description}")
+        self.logger.debug(f"UNDO_REDO: Command executed and pushed to stack (stack size: {len(self.undo_stack)})")
         self.stack_changed.emit()
     
     def undo(self):
-        """Undo the last command."""
-        if not self.can_undo():
-            self.logger.debug("Nothing to undo")
+        """Undo the most recent command."""
+        if not self.undo_stack:
+            self.logger.info("Nothing to undo")
             return False
         
-        command = self.undo_stack.pop()
-        self.is_executing_command = True
-        command.undo()
-        self.is_executing_command = False
-        
-        self.redo_stack.append(command)
-        self.logger.debug(f"Command undone: {command.description}")
-        self.stack_changed.emit()
-        return True
+        try:
+            # Set flag to indicate we're in a command execution to prevent recursive commands
+            old_state = self.is_executing_command
+            self.is_executing_command = True
+            
+            command = self.undo_stack.pop()
+            self.logger.info(f"Undoing: {command.description}")
+            
+            command.undo()
+            self.redo_stack.append(command)
+            
+            # Emit signal about changes - correcting the method call
+            self.stack_changed.emit()
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"Error in undo: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+        finally:
+            # Reset the command execution flag when done
+            self.is_executing_command = old_state
     
     def redo(self):
         """Redo the last undone command."""
@@ -117,4 +137,6 @@ class UndoRedoManager(QObject):
     
     def is_in_command_execution(self):
         """Check if we're currently executing a command."""
-        return self.is_executing_command
+        result = self.is_executing_command
+        self.logger.debug(f"UNDO_REDO: Checked is_in_command_execution, result={result}")
+        return result
