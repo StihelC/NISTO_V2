@@ -647,6 +647,11 @@ class Canvas(QGraphicsView):
         self._drag_start_pos = None
         self._drag_item = None
         
+        # Variables for canvas dragging (panning)
+        self._is_panning = False
+        self._pan_start_x = 0
+        self._pan_start_y = 0
+        
         # Set rendering hints for better quality
         self.setRenderHint(QPainter.Antialiasing)
         self.setRenderHint(QPainter.SmoothPixmapTransform)
@@ -729,9 +734,10 @@ class Canvas(QGraphicsView):
         # Middle mouse button or Shift+Left button for canvas panning
         if event.button() == Qt.MiddleButton or (event.button() == Qt.LeftButton and event.modifiers() & Qt.ShiftModifier):
             self._is_panning = True
-            self._pan_start_x = event.x()
-            self._pan_start_y = event.y()
+            self._pan_start_x = event.pos().x()  # Use position() method for consistency
+            self._pan_start_y = event.pos().y()
             self.setCursor(Qt.ClosedHandCursor)
+            self.setDragMode(QGraphicsView.NoDrag)  # Disable rubber band during panning
             event.accept()
             return
             
@@ -759,20 +765,21 @@ class Canvas(QGraphicsView):
     def mouseMoveEvent(self, event):
         """Handle mouse move events."""
         try:
-            # Handle canvas panning
+            # Handle canvas panning - this needs to take priority
             if self._is_panning:
                 # Calculate how far the mouse has moved
-                dx = event.x() - self._pan_start_x
-                dy = event.y() - self._pan_start_y
+                dx = event.pos().x() - self._pan_start_x
+                dy = event.pos().y() - self._pan_start_y
                 
                 # Update the starting point
-                self._pan_start_x = event.x()
-                self._pan_start_y = event.y()
+                self._pan_start_x = event.pos().x()
+                self._pan_start_y = event.pos().y()
                 
                 # Pan the view by the amount the mouse moved
                 self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - dx)
                 self.verticalScrollBar().setValue(self.verticalScrollBar().value() - dy)
                 
+                # Make sure we don't pass the event to other handlers
                 event.accept()
                 return
             
@@ -793,11 +800,13 @@ class Canvas(QGraphicsView):
     def mouseReleaseEvent(self, event):
         """Handle mouse release events."""
         # End canvas panning
-        if self._is_panning and (event.button() == Qt.MiddleButton or event.button() == Qt.LeftButton):
-            self._is_panning = False
-            self.setCursor(Qt.ArrowCursor)
-            event.accept()
-            return
+        if self._is_panning:
+            if event.button() == Qt.MiddleButton or (event.button() == Qt.LeftButton and event.modifiers() & Qt.ShiftModifier):
+                self._is_panning = False
+                self.setCursor(Qt.ArrowCursor)
+                self.setDragMode(QGraphicsView.RubberBandDrag)  # Restore rubber band mode
+                event.accept()
+                return
             
         # Track item movements for undo/redo
         if hasattr(self, '_drag_start_pos') and hasattr(self, '_drag_item'):
@@ -1107,10 +1116,18 @@ class Canvas(QGraphicsView):
         # Scale the view
         self.scale(zoom_step, zoom_step)
         
+        # Reset the transformation matrix if we're experiencing precision issues
+        if abs(self.transform().m11() - self.current_zoom) > 0.1:
+            # Reset the transform and apply the current zoom directly
+            self.resetTransform()
+            self.scale(self.current_zoom, self.current_zoom)
+            self.logger.warning(f"Corrected zoom transformation matrix: {self.current_zoom:.4f}")
+        
         # Adjust the scene position to keep the mouse cursor in the same position
-        new_pos = self.transform().map(mouse_pos)
+        new_pos = self.mapFromScene(mouse_pos)
         delta = new_pos - event.pos()
-        self.translate(delta.x(), delta.y())
+        self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() + delta.x())
+        self.verticalScrollBar().setValue(self.verticalScrollBar().value() + delta.y())
         
         # Log the zoom level
         self.logger.debug(f"Zoom level: {new_zoom:.3f}")
@@ -1119,8 +1136,12 @@ class Canvas(QGraphicsView):
         zoom_percentage = int(self.current_zoom * 100)
         self.statusMessage.emit(f"Zoom: {zoom_percentage}%")
         
+        # Ensure panning state is reset to prevent conflict with mouse tracking
+        self._is_panning = False
+        
         # Update the view
         self.update()
+        event.accept()
     
     def zoom_in(self):
         """Zoom in on the canvas by a fixed step."""

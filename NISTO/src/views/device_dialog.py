@@ -56,57 +56,6 @@ class DeviceDialog(QDialog):
         self.desc_edit = QLineEdit()
         form_layout.addRow("Description:", self.desc_edit)
         
-        # Device multiplier (for creating multiple copies)
-        self.multiplier_spin = QSpinBox()
-        self.multiplier_spin.setMinimum(1)
-        self.multiplier_spin.setMaximum(100)
-        self.multiplier_spin.setValue(1)
-        self.multiplier_spin.setToolTip("Number of devices to create (arranged in a grid)")
-        # Only enable multiplier for new devices, not when editing
-        self.multiplier_spin.setEnabled(self.device is None)
-        form_layout.addRow("Quantity:", self.multiplier_spin)
-        
-        # Connection options for multiple devices
-        self.connection_group = QGroupBox("Connection Options")
-        self.connection_group.setEnabled(self.device is None)
-        connection_layout = QVBoxLayout()
-        
-        # Checkbox to enable connections between devices
-        self.connect_devices_check = QCheckBox("Connect devices to each other")
-        self.connect_devices_check.setChecked(False)
-        self.connect_devices_check.toggled.connect(self._toggle_connection_options)
-        connection_layout.addWidget(self.connect_devices_check)
-        
-        # Connection type options
-        connection_type_layout = QFormLayout()
-        self.connection_type_combo = QComboBox()
-        
-        # Add connection types from constants
-        for conn_type, display_name in ConnectionTypes.DISPLAY_NAMES.items():
-            self.connection_type_combo.addItem(display_name, conn_type)
-        
-        # Connect signal to update label when type changes
-        self.connection_type_combo.currentIndexChanged.connect(self._update_connection_label)
-        
-        connection_type_layout.addRow("Connection Type:", self.connection_type_combo)
-        
-        # Label for connections
-        self.connection_label_edit = QLineEdit()
-        # Initialize with the current connection type's display name
-        self._update_connection_label()
-        connection_type_layout.addRow("Connection Label:", self.connection_label_edit)
-        
-        # Add connection type options to layout
-        connection_layout.addLayout(connection_type_layout)
-        self.connection_group.setLayout(connection_layout)
-        
-        # Initially disable connection type options
-        self._toggle_connection_options(False)
-        
-        # Add connection group to main form
-        main_layout.addLayout(form_layout)
-        main_layout.addWidget(self.connection_group)
-        
         # Custom icon upload button
         self.icon_label = QLabel("No icon selected")
         self.upload_icon_button = QPushButton("Upload Custom Icon")
@@ -117,6 +66,92 @@ class DeviceDialog(QDialog):
         icon_layout.addWidget(self.upload_icon_button)
         
         form_layout.addRow("Custom Icon:", icon_layout)
+        
+        # Add form_layout to main layout
+        main_layout.addLayout(form_layout)
+        
+        # Create collapsible section for multiple device options
+        self.multiple_check = QCheckBox("Create Multiple Devices")
+        self.multiple_check.toggled.connect(self._toggle_multiple_options)
+        main_layout.addWidget(self.multiple_check)
+        
+        # Multiple devices section (hidden by default)
+        self.multiple_group = QGroupBox("Multiple Device Settings")
+        self.multiple_group.setVisible(False)
+        multiple_layout = QVBoxLayout()
+        
+        # Multiplier spinner with label
+        multiplier_form = QFormLayout()
+        self.multiplier_spin = QSpinBox()
+        self.multiplier_spin.setRange(1, 100)
+        self.multiplier_spin.setValue(1)
+        self.multiplier_spin.setToolTip("Number of devices to create")
+        multiplier_form.addRow("Number of devices:", self.multiplier_spin)
+        multiple_layout.addLayout(multiplier_form)
+        
+        # Grid spacing options
+        spacing_group = QGroupBox("Grid Layout")
+        spacing_layout = QFormLayout()
+        
+        # Horizontal spacing
+        self.h_spacing_spin = QSpinBox()
+        self.h_spacing_spin.setRange(20, 500)
+        self.h_spacing_spin.setValue(100)
+        self.h_spacing_spin.setSingleStep(10)
+        self.h_spacing_spin.setSuffix(" px")
+        self.h_spacing_spin.setToolTip("Horizontal distance between devices")
+        spacing_layout.addRow("Horizontal spacing:", self.h_spacing_spin)
+        
+        # Vertical spacing
+        self.v_spacing_spin = QSpinBox()
+        self.v_spacing_spin.setRange(20, 500)
+        self.v_spacing_spin.setValue(100)
+        self.v_spacing_spin.setSingleStep(10)
+        self.v_spacing_spin.setSuffix(" px")
+        self.v_spacing_spin.setToolTip("Vertical distance between devices")
+        spacing_layout.addRow("Vertical spacing:", self.v_spacing_spin)
+        
+        # Columns
+        self.columns_spin = QSpinBox()
+        self.columns_spin.setRange(1, 20)
+        self.columns_spin.setValue(5)
+        self.columns_spin.setToolTip("Number of columns in the grid")
+        spacing_layout.addRow("Max columns:", self.columns_spin)
+        
+        # Grid preview
+        self.preview_label = QLabel("Grid layout: 1 row × 1 column")
+        spacing_layout.addRow("Preview:", self.preview_label)
+        spacing_group.setLayout(spacing_layout)
+        multiple_layout.addWidget(spacing_group)
+        
+        # Add update preview connections
+        self.multiplier_spin.valueChanged.connect(self._update_grid_preview)
+        self.columns_spin.valueChanged.connect(self._update_grid_preview)
+        
+        # Connection options
+        connection_group = QGroupBox("Connection Options")
+        connection_layout = QVBoxLayout()
+        
+        # Connect checkbox
+        self.connect_checkbox = QCheckBox("Connect devices in grid pattern")
+        self.connect_checkbox.setToolTip("Create connections between devices")
+        connection_layout.addWidget(self.connect_checkbox)
+        
+        # Connection type selection
+        conn_form = QFormLayout()
+        self.connection_type_combo = QComboBox()
+        
+        # Populate with connection types
+        for conn_type, display_name in ConnectionTypes.DISPLAY_NAMES.items():
+            self.connection_type_combo.addItem(display_name, conn_type)
+        
+        conn_form.addRow("Connection Type:", self.connection_type_combo)
+        connection_layout.addLayout(conn_form)
+        connection_group.setLayout(connection_layout)
+        multiple_layout.addWidget(connection_group)
+        
+        self.multiple_group.setLayout(multiple_layout)
+        main_layout.addWidget(self.multiple_group)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -134,9 +169,22 @@ class DeviceDialog(QDialog):
         
         self.setLayout(main_layout)
         
-        # Connect multiplier spin to enable/disable connection options
-        self.multiplier_spin.valueChanged.connect(self._update_connection_group_state)
-    
+        # Initial grid update
+        self._update_grid_preview()
+
+    def _toggle_multiple_options(self, checked):
+        """Show or hide multiple device options based on checkbox state."""
+        self.multiple_group.setVisible(checked)
+        
+        # Adjust dialog size when toggling
+        if checked:
+            self.adjustSize()
+        
+        # Only enable multiplier for new devices, not when editing
+        if self.device is not None:
+            self.multiple_check.setEnabled(False)
+            self.multiple_group.setEnabled(False)
+
     def _toggle_connection_options(self, enabled):
         """Enable or disable the connection type options."""
         for i in range(self.connection_group.layout().count()):
@@ -228,12 +276,15 @@ class DeviceDialog(QDialog):
         
     def get_multiplier(self):
         """Get the number of devices to create."""
-        return self.multiplier_spin.value()
+        if self.multiple_check.isChecked():
+            return self.multiplier_spin.value()
+        return 1
     
     def should_connect_devices(self):
         """Check if devices should be connected to each other."""
-        return (self.multiplier_spin.value() > 1 and 
-                self.connect_devices_check.isChecked())
+        return (self.multiple_check.isChecked() and 
+                self.connect_checkbox.isChecked() and
+                self.multiplier_spin.value() > 1)
     
     def get_connection_data(self):
         """Get the connection configuration data."""
@@ -248,4 +299,23 @@ class DeviceDialog(QDialog):
             'label': display_name,  # Always use the display name
             'bandwidth': ConnectionTypes.DEFAULT_BANDWIDTHS.get(conn_type, ""),
             'latency': ""
+        }
+    
+    def _update_grid_preview(self):
+        """Update the grid layout preview based on current settings."""
+        devices = self.multiplier_spin.value()
+        max_columns = self.columns_spin.value()
+        
+        # Calculate grid dimensions
+        columns = min(devices, max_columns)
+        rows = (devices + columns - 1) // columns  # Ceiling division
+        
+        self.preview_label.setText(f"Grid layout: {rows} row{'s' if rows > 1 else ''} × {columns} column{'s' if columns > 1 else ''}")
+    
+    def get_spacing_data(self):
+        """Get the grid spacing configuration."""
+        return {
+            'horizontal_spacing': self.h_spacing_spin.value(),
+            'vertical_spacing': self.v_spacing_spin.value(),
+            'max_columns': self.columns_spin.value()
         }

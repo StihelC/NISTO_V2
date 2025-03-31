@@ -35,6 +35,9 @@ class DeviceController:
                 should_connect = dialog.should_connect_devices()
                 connection_data = dialog.get_connection_data() if should_connect else None
                 
+                # Get grid spacing data
+                spacing_data = dialog.get_spacing_data()
+                
                 # Store connection data temporarily for spacing calculations
                 if should_connect:
                     self.canvas.connection_data = connection_data
@@ -60,7 +63,7 @@ class DeviceController:
                         self.create_device(device_data, pos)
                 else:
                     # Create multiple devices in a grid
-                    self.logger.debug(f"BULK ADD: Starting creation of {multiplier} devices")
+                    self.logger.debug(f"BULK ADD: Starting creation of {multiplier} devices with spacing: {spacing_data}")
                     
                     if self.undo_redo_manager and not self.undo_redo_manager.is_in_command_execution():
                         # Create a composite command for multiple device creation and connections
@@ -76,7 +79,8 @@ class DeviceController:
                         try:
                             # Create devices through the command pattern
                             device_info = self._create_multiple_devices_with_commands(
-                                device_data, pos, multiplier, composite_cmd, should_connect, connection_data)
+                                device_data, pos, multiplier, composite_cmd, should_connect, connection_data, spacing_data
+                            )
                             
                             self.logger.debug(f"BULK ADD: Created {len(device_info['devices'])} devices with commands")
                             
@@ -89,7 +93,7 @@ class DeviceController:
                             self._in_bulk_creation = False
                     else:
                         # Create without undo support
-                        device_info = self._create_multiple_devices(device_data, pos, multiplier)
+                        device_info = self._create_multiple_devices(device_data, pos, multiplier, spacing_data)
                         
                         # Connect devices if specified
                         if should_connect and device_info['devices'] and len(device_info['devices']) > 1:
@@ -103,50 +107,57 @@ class DeviceController:
             self._show_error(f"Failed to add device: {str(e)}")
         return False
     
-    def _create_multiple_devices(self, device_data, pos, count):
+    def _create_multiple_devices(self, device_data, pos, count, spacing_data=None):
         """Create multiple devices arranged in a grid."""
         if pos is None:
             # Default position at center if none provided
             scene_rect = self.canvas.scene().sceneRect()
             pos = QPointF(scene_rect.width() / 2, scene_rect.height() / 2)
         
-        # Determine grid dimensions - aim for a roughly square grid
-        grid_size = math.ceil(math.sqrt(count))
+        # Get spacing configuration
+        if not spacing_data:
+            spacing_data = {
+                'horizontal_spacing': 100,
+                'vertical_spacing': 100,
+                'max_columns': 5
+            }
         
-        # Standard device size
-        device_width = 60  # standard device width
-        device_height = 60  # standard device height
+        horizontal_spacing = spacing_data.get('horizontal_spacing', 100)
+        vertical_spacing = spacing_data.get('vertical_spacing', 100)
+        max_columns = spacing_data.get('max_columns', 5)
         
-        # Estimate text width for the device name to improve spacing
-        base_name = device_data['name']
-        font_metrics = QFontMetrics(self.canvas.font())
-        longest_name = base_name + str(count)
-        text_width = font_metrics.horizontalAdvance(longest_name)
+        # Calculate grid size
+        columns = min(count, max_columns)
+        rows = (count + columns - 1) // columns  # Ceiling division
+        grid_size = (rows, columns)
         
-        # Calculate connection label width - use the connection label if connecting
-        connection_label_width = 0
-        if hasattr(self.canvas, 'connection_data') and self.canvas.connection_data:
-            connection_label = self.canvas.connection_data.get('label', '')
-            if connection_label:
-                connection_label_width = font_metrics.horizontalAdvance(connection_label)
+        # Device size for spacing calculation
+        device_width = 60  # Default device width
+        device_height = 60  # Default device height
         
-        # Calculate spacing based on device size, text width, and connection labels
-        horizontal_spacing = max(80, text_width - device_width + 20, connection_label_width + 30)
-        vertical_spacing = max(80, device_height + 40)  # Ensure enough vertical space for connections
+        # Calculate total grid width and height
+        grid_width = columns * device_width + (columns - 1) * horizontal_spacing
+        grid_height = rows * device_height + (rows - 1) * vertical_spacing
         
-        # Calculate grid starting position - center the grid around the original position
-        grid_width = grid_size * device_width + (grid_size - 1) * horizontal_spacing
-        grid_height = grid_size * device_height + (grid_size - 1) * vertical_spacing
-        start_x = pos.x() - (grid_width / 2) + (device_width / 2)
-        start_y = pos.y() - (grid_height / 2) + (device_height / 2)
+        # Calculate starting position (top-left of the grid)
+        start_x = pos.x() - grid_width / 2 + device_width / 2
+        start_y = pos.y() - grid_height / 2 + device_height / 2
         
-        devices_created = 0
+        # Store created devices and their positions
         created_devices = []
         device_positions = []
         
-        # Create devices in a grid pattern
-        for row in range(grid_size):
-            for col in range(grid_size):
+        # Create the base name
+        base_name = device_data['name']
+        if base_name.endswith(tuple("0123456789")):
+            # If name already ends with a number, remove it for consistent numbering
+            while base_name and base_name[-1].isdigit():
+                base_name = base_name[:-1]
+        
+        # Create devices in a grid layout
+        devices_created = 0
+        for row in range(rows):
+            for col in range(columns):
                 if devices_created >= count:
                     break
                 
@@ -161,16 +172,15 @@ class DeviceController:
                 if count > 1:
                     current_data['name'] = f"{base_name}{devices_created+1}"
                 
-                # Create device at calculated position
+                # Create the device
                 device = self.create_device(current_data, device_pos)
                 if device:
                     created_devices.append(device)
-                    # Store position information for connection logic
                     device_positions.append((row, col, device))
                 
                 devices_created += 1
         
-        # Store grid info with the devices for connection logic
+        # Return information about created devices
         return {
             'devices': created_devices,
             'positions': device_positions,
@@ -178,42 +188,41 @@ class DeviceController:
             'count': count
         }
     
-    def _create_multiple_devices_with_commands(self, device_data, pos, count, composite_cmd, should_connect=False, connection_data=None):
+    def _create_multiple_devices_with_commands(self, device_data, pos, count, composite_cmd, should_connect=False, connection_data=None, spacing_data=None):
         """Create multiple devices arranged in a grid with undo/redo support."""
         if pos is None:
             # Default position at center if none provided
             scene_rect = self.canvas.scene().sceneRect()
             pos = QPointF(scene_rect.width() / 2, scene_rect.height() / 2)
         
-        # Determine grid dimensions - aim for a roughly square grid
-        grid_size = math.ceil(math.sqrt(count))
+        # Get spacing configuration
+        if not spacing_data:
+            spacing_data = {
+                'horizontal_spacing': 100,
+                'vertical_spacing': 100,
+                'max_columns': 5
+            }
         
-        # Standard device size
-        device_width = 60  # standard device width
-        device_height = 60  # standard device height
+        horizontal_spacing = spacing_data.get('horizontal_spacing', 100)
+        vertical_spacing = spacing_data.get('vertical_spacing', 100)
+        max_columns = spacing_data.get('max_columns', 5)
         
-        # Estimate text width for the device name to improve spacing
-        base_name = device_data['name']
-        font_metrics = QFontMetrics(self.canvas.font())
-        longest_name = base_name + str(count)
-        text_width = font_metrics.horizontalAdvance(longest_name)
+        # Calculate grid size
+        columns = min(count, max_columns)
+        rows = (count + columns - 1) // columns  # Ceiling division
+        grid_size = (rows, columns)
         
-        # Calculate connection label width - use the connection label if connecting
-        connection_label_width = 0
-        if hasattr(self.canvas, 'connection_data') and self.canvas.connection_data:
-            connection_label = self.canvas.connection_data.get('label', '')
-            if connection_label:
-                connection_label_width = font_metrics.horizontalAdvance(connection_label)
+        # Device size for spacing calculation
+        device_width = 60  # Default device width
+        device_height = 60  # Default device height
         
-        # Calculate spacing based on device size, text width, and connection labels
-        horizontal_spacing = max(80, text_width - device_width + 20, connection_label_width + 30)
-        vertical_spacing = max(80, device_height + 40)  # Ensure enough vertical space for connections
+        # Calculate total grid width and height
+        grid_width = columns * device_width + (columns - 1) * horizontal_spacing
+        grid_height = rows * device_height + (rows - 1) * vertical_spacing
         
-        # Calculate grid starting position - center the grid around the original position
-        grid_width = grid_size * device_width + (grid_size - 1) * horizontal_spacing
-        grid_height = grid_size * device_height + (grid_size - 1) * vertical_spacing
-        start_x = pos.x() - (grid_width / 2) + (device_width / 2)
-        start_y = pos.y() - (grid_height / 2) + (device_height / 2)
+        # Calculate starting position (top-left of the grid)
+        start_x = pos.x() - grid_width / 2 + device_width / 2
+        start_y = pos.y() - grid_height / 2 + device_height / 2
         
         # Check if we're within a command execution already to prevent double execution
         is_executing = False
@@ -230,13 +239,20 @@ class DeviceController:
         
         try:
             # Create all devices first
-            self.logger.debug(f"BULK ADD: Starting to create {count} devices in grid of {grid_size}x{grid_size}")
+            self.logger.debug(f"BULK ADD: Starting to create {count} devices in grid of {rows}x{columns}")
             
             # Store references to commands and devices they create for better tracking
             device_commands = []
             
-            for row in range(grid_size):
-                for col in range(grid_size):
+            # Create the base name
+            base_name = device_data['name']
+            if base_name.endswith(tuple("0123456789")):
+                # If name already ends with a number, remove it for consistent numbering
+                while base_name and base_name[-1].isdigit():
+                    base_name = base_name[:-1]
+            
+            for row in range(rows):
+                for col in range(columns):
                     if devices_created >= count:
                         break
                     
@@ -335,31 +351,34 @@ class DeviceController:
         }
     
     def _connect_devices(self, device_info, connection_data):
-        """Connect multiple devices in an E-shaped pattern."""
+        """Connect devices in a grid pattern."""
         try:
             devices = device_info['devices']
             positions = device_info['positions']
             grid_size = device_info['grid_size']
+            rows, cols = grid_size
             
             # Create a 2D grid representation for easier lookup
             grid = {}
             for row, col, device in positions:
                 grid[(row, col)] = device
-                
-            # First connect devices horizontally in each row (creating the horizontals in the E)
-            for row in range(grid_size):
-                for col in range(grid_size - 1):
-                    if (row, col) in grid and (row, col + 1) in grid:
-                        source = grid[(row, col)]
-                        target = grid[(row, col + 1)]
-                        self._create_connection(source, target, connection_data)
             
-            # Then connect first column devices vertically (creating the vertical in the E)
-            for row in range(grid_size - 1):
-                if (row, 0) in grid and (row + 1, 0) in grid:
-                    source = grid[(row, 0)]
-                    target = grid[(row + 1, 0)]
-                    self._create_connection(source, target, connection_data)
+            self.logger.debug(f"Connecting devices in grid of {rows}x{cols}")
+            for row in range(rows):
+                for col in range(cols):
+                    # Connect horizontally to the right
+                    if col < cols-1 and (row, col) in grid and (row, col+1) in grid:
+                        source = grid[(row, col)]
+                        target = grid[(row, col+1)]
+                        self.logger.debug(f"Creating horizontal connection: {source.name} -> {target.name}")
+                        self._create_connection(source, target, connection_data)
+                    
+                    # Connect vertically downward
+                    if row < rows-1 and (row, col) in grid and (row+1, col) in grid:
+                        source = grid[(row, col)]
+                        target = grid[(row+1, col)]
+                        self.logger.debug(f"Creating vertical connection: {source.name} -> {target.name}")
+                        self._create_connection(source, target, connection_data)
                     
         except Exception as e:
             self.logger.error(f"Error creating connections: {str(e)}")
@@ -367,11 +386,12 @@ class DeviceController:
             self._show_error(f"Failed to create connections: {str(e)}")
 
     def _connect_devices_with_commands(self, device_info, connection_data, composite_cmd):
-        """Connect multiple devices in an E-shaped pattern with undo/redo support."""
+        """Connect devices in a grid pattern with undo/redo support."""
         try:
             devices = device_info['devices']
             positions = device_info['positions']
             grid_size = device_info['grid_size']
+            rows, cols = grid_size
             
             # Create a 2D grid representation for easier lookup
             grid = {}
@@ -381,19 +401,37 @@ class DeviceController:
             # Import the necessary command class
             from controllers.commands import AddConnectionCommand
             
-            # Get the connection controller
+            # Get the connection controller - improved method to find it
             connection_controller = self._get_connection_controller()
+            
+            # Log detailed connection controller retrieval attempts
+            self.logger.debug(f"Connection controller lookup: {connection_controller}")
+            
             if not connection_controller:
-                self.logger.error("Cannot connect devices: Connection controller not found")
-                return
+                self.logger.error("Connection controller not found, attempting alternative access methods")
                 
-            # First connect devices horizontally in each row (creating the horizontals in the E)
-            for row in range(grid_size):
-                for col in range(grid_size - 1):
-                    if (row, col) in grid and (row, col + 1) in grid:
+                # Try alternative methods to get the connection controller
+                if hasattr(self.event_bus, 'controllers') and 'connection_controller' in self.event_bus.controllers:
+                    connection_controller = self.event_bus.controllers['connection_controller']
+                    self.logger.info("Retrieved connection controller from event_bus.controllers dictionary")
+                elif hasattr(self.canvas, 'parent') and hasattr(self.canvas.parent(), 'connection_controller'):
+                    connection_controller = self.canvas.parent().connection_controller
+                    self.logger.info("Retrieved connection controller from canvas parent")
+                else:
+                    # Create our own connections if we can't find the controller
+                    self.logger.warning("Creating connections directly instead of using controller")
+                    self._connect_devices(device_info, connection_data)
+                    return
+            
+            self.logger.debug(f"Creating connections with commands for grid of {rows}x{cols}")
+            for row in range(rows):
+                for col in range(cols):
+                    # Connect horizontally to the right
+                    if col < cols-1 and (row, col) in grid and (row, col+1) in grid:
                         source = grid[(row, col)]
-                        target = grid[(row, col + 1)]
+                        target = grid[(row, col+1)]
                         
+                        self.logger.debug(f"Adding horizontal connection command: {source.name} -> {target.name}")
                         conn_cmd = AddConnectionCommand(
                             connection_controller,
                             source,
@@ -404,24 +442,24 @@ class DeviceController:
                         )
                         
                         composite_cmd.add_command(conn_cmd)
-            
-            # Then connect first column devices vertically (creating the vertical in the E)
-            for row in range(grid_size - 1):
-                if (row, 0) in grid and (row + 1, 0) in grid:
-                    source = grid[(row, 0)]
-                    target = grid[(row + 1, 0)]  # FIX: Use row+1 for target, not 0
                     
-                    conn_cmd = AddConnectionCommand(
-                        connection_controller,
-                        source,
-                        target,
-                        None,
-                        None,
-                        connection_data
-                    )
-                    
-                    composite_cmd.add_command(conn_cmd)
-                    
+                    # Connect vertically downward
+                    if row < rows-1 and (row, col) in grid and (row+1, col) in grid:
+                        source = grid[(row, col)]
+                        target = grid[(row+1, col)]
+                        
+                        self.logger.debug(f"Adding vertical connection command: {source.name} -> {target.name}")
+                        conn_cmd = AddConnectionCommand(
+                            connection_controller,
+                            source,
+                            target,
+                            None,
+                            None,
+                            connection_data
+                        )
+                        
+                        composite_cmd.add_command(conn_cmd)
+                        
         except Exception as e:
             self.logger.error(f"Error creating connections with commands: {str(e)}")
             traceback.print_exc()
@@ -585,8 +623,31 @@ class DeviceController:
 
     def _get_connection_controller(self):
         """Helper to get the connection controller for proper deletion routing."""
+        connection_controller = None
+        
+        # Method 1: Try to get from event_bus get_controller method
         if hasattr(self.event_bus, 'get_controller'):
-            return self.event_bus.get_controller('connection_controller')
+            connection_controller = self.event_bus.get_controller('connection_controller')
+            if connection_controller:
+                self.logger.debug("Found connection_controller via event_bus.get_controller")
+                return connection_controller
+        
+        # Method 2: Try direct access through main window
+        if hasattr(self.canvas, 'parent'):
+            parent = self.canvas.parent()
+            if hasattr(parent, 'connection_controller'):
+                connection_controller = parent.connection_controller
+                self.logger.debug("Found connection_controller via canvas.parent()")
+                return connection_controller
+        
+        # Method 3: Try to find in event_bus controllers dictionary
+        if hasattr(self.event_bus, 'controllers'):
+            if 'connection_controller' in self.event_bus.controllers:
+                connection_controller = self.event_bus.controllers['connection_controller']
+                self.logger.debug("Found connection_controller via event_bus.controllers")
+                return connection_controller
+        
+        self.logger.error("Failed to find connection_controller")
         return None
     
     def _show_error(self, message):
