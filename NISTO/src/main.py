@@ -6,12 +6,14 @@ from views.main_window import MainWindow
 from controllers.command_manager import CommandManager
 from controllers.undo_redo_manager import UndoRedoManager
 
+# Configure logging to show ONLY needed information (remove DEBUG level)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
 def main():
-    # Configure logging
-    logging.basicConfig(level=logging.INFO, 
-                      format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    logger = logging.getLogger(__name__)
-    
     # Create application
     app = QApplication(sys.argv)
     

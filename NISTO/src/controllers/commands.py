@@ -169,17 +169,22 @@ class DeleteBoundaryCommand(Command):
 
 
 class AddConnectionCommand(Command):
-    """Command to add a connection between devices."""
+    """Command to add a connection between two devices."""
     
     def __init__(self, connection_controller, source_device, target_device, source_port=None, target_port=None, properties=None):
-        super().__init__(f"Add Connection {source_device.name} to {target_device.name}")
+        # Make sure we have name attributes for the description, with fallbacks
+        source_name = getattr(source_device, 'name', 'Source')
+        target_name = getattr(target_device, 'name', 'Target')
+        
+        super().__init__(f"Add Connection {source_name} to {target_name}")
+        
         self.connection_controller = connection_controller
         self.source_device = source_device
         self.target_device = target_device
         self.source_port = source_port
         self.target_port = target_port
-        self.properties = properties
-        self.created_connection = None
+        self.properties = properties or {}
+        self.connection = None
     
     def execute(self):
         """Create and add the connection."""

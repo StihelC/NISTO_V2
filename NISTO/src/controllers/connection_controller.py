@@ -15,37 +15,48 @@ class ConnectionController:
         self.logger = logging.getLogger(__name__)
         self.undo_redo_manager = undo_redo_manager
     
-    def on_add_connection_requested(self, source_device, target_device, connection_data=None):
-        """Handle request to add a connection with data from the connection dialog."""
-        # Extract properties from connection_data if available
-        properties = None
-        source_port = None
-        target_port = None
-        
-        if connection_data:
-            properties = {}
-            if 'type' in connection_data:
-                properties['connection_type'] = connection_data['type']
-            if 'bandwidth' in connection_data:
-                properties['bandwidth'] = connection_data['bandwidth']
-            if 'latency' in connection_data:
-                properties['latency'] = connection_data['latency']
-            if 'label' in connection_data:
-                properties['label_text'] = connection_data['label']
-        
-        # Pass to the regular connection request method
-        return self.on_connection_requested(source_device, target_device, source_port, target_port, properties)
-    
+    def on_add_connection_requested(self, source_device, target_device, properties=None):
+        """Handle request to add a new connection."""
+        try:
+            self.logger.info(f"Adding connection between devices")
+            
+            # Make sure both devices are actual Device objects
+            if not hasattr(source_device, 'get_nearest_port') or not hasattr(target_device, 'get_nearest_port'):
+                self.logger.error("Invalid device objects provided for connection")
+                return False
+            
+            # Calculate optimal connection ports
+            target_center = target_device.get_center_position()
+            source_center = source_device.get_center_position()
+            
+            source_port = source_device.get_nearest_port(target_center)
+            target_port = target_device.get_nearest_port(source_center)
+            
+            # Delegate to shared method
+            return self.on_connection_requested(source_device, target_device, source_port, target_port, properties)
+        except Exception as e:
+            self.logger.error(f"Error handling add connection request: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return False
+
     def on_connection_requested(self, source_device, target_device, source_port=None, target_port=None, properties=None):
-        """Handle request to create a connection between two devices."""
-        # Use command pattern if undo_redo_manager is available
-        if self.undo_redo_manager and not self.undo_redo_manager.is_in_command_execution():
-            command = AddConnectionCommand(self, source_device, target_device, source_port, target_port, properties)
-            self.undo_redo_manager.push_command(command)
-            return command.created_connection
-        else:
-            # Original implementation
-            return self.create_connection(source_device, target_device, source_port, target_port, properties)
+        """Common method for creating a connection with undo/redo support."""
+        try:
+            # Use command pattern if available
+            if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
+                from controllers.commands import AddConnectionCommand
+                command = AddConnectionCommand(self, source_device, target_device, source_port, target_port, properties)
+                self.undo_redo_manager.push_command(command)
+                return command.connection  # Return the created connection
+            else:
+                # No undo/redo support, create directly
+                return self._create_connection(source_device, target_device, source_port, target_port, properties)
+        except Exception as e:
+            self.logger.error(f"Error creating connection: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
     
     def on_delete_connection_requested(self, connection):
         """Handle request to delete a specific connection."""

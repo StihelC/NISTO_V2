@@ -100,8 +100,24 @@ class Device(QGraphicsItem):
         # List of connections attached to this device
         self.connections = []
         
+        # Initialize component variables
+        self.label = None
+        self.image = None
+        self.box = None
+        self.rect_item = None
+        self.text_item = None
+        self.icon_item = None
+        
         # Create child items
         self._create_visuals()
+        
+        # Set up parent-child relationships
+        if self.text_item:
+            self.text_item.setParentItem(self)
+        if self.icon_item:
+            self.icon_item.setParentItem(self)
+        if self.rect_item:
+            self.rect_item.setParentItem(self)
     
     def _init_properties(self, custom_properties=None):
         """Initialize the device properties based on type and custom values."""
@@ -135,7 +151,6 @@ class Device(QGraphicsItem):
         self.text_item.setPos(text_x, self.height + 5)  # Position below rectangle
         
         # Try to load the icon as a separate item
-        self.icon_item = None
         self._try_load_icon()
     
     def _try_load_icon(self):
@@ -598,3 +613,19 @@ class Device(QGraphicsItem):
                 self.update()  # This calls the Qt update method
                 
                 self.logger.debug(f"Device '{self.name}' color updated to {self.color.name()}")
+
+    def center_pos(self):
+        """Get the center position of the device in scene coordinates."""
+        return self.get_center_position()
+
+    def setFlag(self, flag, enabled):
+        """Override setFlag to properly propagate flags to child items."""
+        # Call the base implementation first
+        super().setFlag(flag, enabled)
+        
+        # Only handle ItemIsMovable flag
+        if flag == QGraphicsItem.ItemIsMovable:
+            # Apply the same flag to all child items
+            for child in self.childItems():
+                # Use setFlag directly instead of setFlags
+                child.setFlag(QGraphicsItem.ItemIsMovable, enabled)

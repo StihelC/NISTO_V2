@@ -3,7 +3,7 @@ from PyQt5.QtCore import QPointF, QTimer, Qt
 from PyQt5.QtGui import QColor  # Removed QKeySequence import as it's not used
 import logging
 
-from .canvas import Canvas
+from views.canvas.canvas import Canvas  # Updated import path
 from constants import Modes
 from controllers.menu_manager import MenuManager
 from controllers.device_controller import DeviceController
@@ -29,7 +29,7 @@ class MainWindow(QMainWindow):
         self.logger = logging.getLogger(__name__)
 
         # Create canvas
-        self.canvas = Canvas(self)
+        self.canvas = Canvas(self)  # This now uses the canvas from the canvas folder
         self.setCentralWidget(self.canvas)
         
         # Create status bar
@@ -261,8 +261,27 @@ class MainWindow(QMainWindow):
         """Handle request to delete a non-specific item."""
         if item:
             self.logger.info(f"Deleting item of type {type(item).__name__}")
-            self.canvas.scene().removeItem(item)
-    
+            
+            # Find the top-level parent item if it's part of a composite
+            top_item = item
+            while top_item.parentItem():
+                top_item = top_item.parentItem()
+                
+            # Dispatch to appropriate controller based on type
+            from models.device import Device
+            from models.connection import Connection
+            from models.boundary import Boundary
+            
+            if isinstance(top_item, Device):
+                self.device_controller.on_delete_device_requested(top_item)
+            elif isinstance(top_item, Connection):
+                self.connection_controller.on_delete_connection_requested(top_item)
+            elif isinstance(top_item, Boundary):
+                self.boundary_controller.on_delete_boundary_requested(top_item)
+            else:
+                # Generic item with no specific controller
+                self.canvas.scene().removeItem(top_item)
+        
     def on_delete_selected_requested(self):
         """Handle request to delete all selected items."""
         selected_items = self.canvas.scene().selectedItems()
