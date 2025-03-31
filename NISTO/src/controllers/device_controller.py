@@ -609,6 +609,35 @@ class DeviceController:
         """Show error message dialog."""
         QMessageBox.critical(self.canvas.parent(), "Error", message)
 
+    def _get_connection_controller(self):
+        """Helper to get the connection controller for proper deletion routing."""
+        connection_controller = None
+        
+        # Method 1: Try to get from event_bus get_controller method
+        if hasattr(self.event_bus, 'get_controller'):
+            connection_controller = self.event_bus.get_controller('connection_controller')
+            if connection_controller:
+                self.logger.debug("Found connection_controller via event_bus.get_controller")
+                return connection_controller
+        
+        # Method 2: Try direct access through main window
+        if hasattr(self.canvas, 'parent'):
+            parent = self.canvas.parent()
+            if hasattr(parent, 'connection_controller'):
+                connection_controller = parent.connection_controller
+                self.logger.debug("Found connection_controller via canvas.parent()")
+                return connection_controller
+        
+        # Method 3: Try to find in event_bus controllers dictionary
+        if hasattr(self.event_bus, 'controllers'):
+            if 'connection_controller' in self.event_bus.controllers:
+                connection_controller = self.event_bus.controllers['connection_controller']
+                self.logger.debug("Found connection_controller via event_bus.controllers")
+                return connection_controller
+                
+        self.logger.error("Failed to find connection_controller")
+        return None
+
 def on_delete_device_requested(self, device):
     """Handle request to delete a device."""
     # Use command manager if available, otherwise delete directly
@@ -635,32 +664,3 @@ def _remove_connection_manually(self, conn):
     if hasattr(conn.target_device, 'connections'):
         if conn in conn.target_device.connections:
             conn.target_device.connections.remove(conn)
-
-def _get_connection_controller(self):
-    """Helper to get the connection controller for proper deletion routing."""
-    connection_controller = None
-    
-    # Method 1: Try to get from event_bus get_controller method
-    if hasattr(self.event_bus, 'get_controller'):
-        connection_controller = self.event_bus.get_controller('connection_controller')
-        if connection_controller:
-            self.logger.debug("Found connection_controller via event_bus.get_controller")
-            return connection_controller
-    
-    # Method 2: Try direct access through main window
-    if hasattr(self.canvas, 'parent'):
-        parent = self.canvas.parent()
-        if hasattr(parent, 'connection_controller'):
-            connection_controller = parent.connection_controller
-            self.logger.debug("Found connection_controller via canvas.parent()")
-            return connection_controller
-    
-    # Method 3: Try to find in event_bus controllers dictionary
-    if hasattr(self.event_bus, 'controllers'):
-        if 'connection_controller' in self.event_bus.controllers:
-            connection_controller = self.event_bus.controllers['connection_controller']
-            self.logger.debug("Found connection_controller via event_bus.controllers")
-            return connection_controller
-    
-    self.logger.error("Failed to find connection_controller")
-    return None
