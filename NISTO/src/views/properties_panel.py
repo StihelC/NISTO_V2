@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QGroupBox, 
     QFormLayout, QLineEdit, QSpinBox, QComboBox,
     QPushButton, QScrollArea, QHBoxLayout, QTableWidget,
-    QTableWidgetItem, QHeaderView, QCheckBox, QColorDialog
+    QTableWidgetItem, QHeaderView, QCheckBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor
@@ -13,10 +13,10 @@ class PropertiesPanel(QWidget):
     # Signals for property changes
     name_changed = pyqtSignal(str)
     z_value_changed = pyqtSignal(float)
-    color_changed = pyqtSignal(QColor)
     device_property_changed = pyqtSignal(str, object)
     connection_property_changed = pyqtSignal(str, object)
     boundary_property_changed = pyqtSignal(str, object)
+    change_icon_requested = pyqtSignal(object)  # New signal for icon change
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -80,18 +80,7 @@ class PropertiesPanel(QWidget):
         )
         layout.addRow("Layer (Z-Index):", self.z_index_spin)
         
-        # Color button for boundaries and devices
-        color_layout = QHBoxLayout()
-        self.color_preview = QLabel()
-        self.color_preview.setFixedSize(20, 20)
-        self.color_preview.setStyleSheet("background-color: gray; border: 1px solid black;")
-        
-        self.color_button = QPushButton("Change Color")
-        self.color_button.clicked.connect(self._on_color_button_clicked)
-        
-        color_layout.addWidget(self.color_preview)
-        color_layout.addWidget(self.color_button)
-        layout.addRow("Color:", color_layout)
+        # Remove color picker section
         
         return group
     
@@ -103,6 +92,11 @@ class PropertiesPanel(QWidget):
         # Device type 
         self.device_type_label = QLabel()
         layout.addRow("Type:", self.device_type_label)
+        
+        # Add button to change device icon
+        self.change_icon_button = QPushButton("Change Icon")
+        self.change_icon_button.clicked.connect(self._on_change_icon_clicked)
+        layout.addRow("Icon:", self.change_icon_button)
         
         # Custom properties table
         self.device_props_table = QTableWidget(0, 2)
@@ -193,9 +187,7 @@ class PropertiesPanel(QWidget):
         # Set z-index value
         self.z_index_spin.setValue(int(item.zValue()))
         
-        # Show color if applicable
-        if hasattr(item, 'color'):
-            self.color_preview.setStyleSheet(f"background-color: {item.color.name()}; border: 1px solid black;")
+        # Remove color preview update
         
         # Show specific section based on item type
         from models.device import Device
@@ -278,8 +270,17 @@ class PropertiesPanel(QWidget):
         # Set line style
         if hasattr(connection, 'routing_style'):
             self.line_style_combo.blockSignals(True)
-            style_map = {"direct": "Straight", "orthogonal": "Orthogonal", "curved": "Curved"}
-            self.line_style_combo.setCurrentText(style_map.get(connection.routing_style, "Straight"))
+            
+            # Map integer constants to UI strings
+            style_map = {
+                0: "Straight",   # STYLE_STRAIGHT
+                1: "Orthogonal", # STYLE_ORTHOGONAL
+                2: "Curved"      # STYLE_CURVED
+            }
+            
+            # Get the style name for the current style
+            style_name = style_map.get(connection.routing_style, "Straight")
+            self.line_style_combo.setCurrentText(style_name)
             self.line_style_combo.blockSignals(False)
         
         # Disconnect signal to prevent firing while updating
@@ -333,24 +334,6 @@ class PropertiesPanel(QWidget):
         if self.current_item and self.boundary_group.isVisible():
             self._display_boundary_properties(self.current_item)
     
-    def _on_color_button_clicked(self):
-        """Handle color button click to change color."""
-        if not self.current_item:
-            return
-            
-        color = None
-        if hasattr(self.current_item, 'color'):
-            color = self.current_item.color
-        
-        color_dialog = QColorDialog(self)
-        if color:
-            color_dialog.setCurrentColor(color)
-            
-        if color_dialog.exec_():
-            selected_color = color_dialog.selectedColor()
-            self.color_preview.setStyleSheet(f"background-color: {selected_color.name()}; border: 1px solid black;")
-            self.color_changed.emit(selected_color)
-    
     def _on_device_property_changed(self, row, column):
         """Handle changes in device property table."""
         if column == 1:  # Only care about value column
@@ -364,3 +347,8 @@ class PropertiesPanel(QWidget):
             key = self.connection_props_table.item(row, 0).text()
             value = self.connection_props_table.item(row, 1).text()
             self.connection_property_changed.emit(key, value)
+    
+    def _on_change_icon_clicked(self):
+        """Handle click on change icon button."""
+        if self.current_item:
+            self.change_icon_requested.emit(self.current_item)

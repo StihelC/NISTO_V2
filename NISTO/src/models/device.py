@@ -139,66 +139,215 @@ class Device(QGraphicsItem):
         self._try_load_icon()
     
     def _try_load_icon(self):
-        """Try to load an icon for the device type."""
-        if self.custom_icon_path:
-            self.logger.debug(f"Trying to load custom icon from: {self.custom_icon_path}")
-            self._load_icon(self.custom_icon_path)
-        else:
-            icon_name = self.properties.get('icon', 'device.png')
-            icon_paths = [
-                f"icons/{icon_name}",
-                f"resources/icons/{icon_name}",
-                f"src/resources/icons/{icon_name}",
-                f"../resources/icons/{icon_name}"
-            ]
-            for path in icon_paths:
-                if os.path.exists(path):
-                    self.logger.debug(f"Loading default icon from: {path}")
-                    self._load_icon(path)
-                    return
-            self.logger.warning(f"No icon found for device type {self.device_type}")
-    
+        """Try to load an icon for the device type or name from multiple possible locations."""
+        # First check for custom icon path (highest priority)
+        if self.custom_icon_path and os.path.exists(self.custom_icon_path):
+            self.logger.info(f"ICON DEBUG: Loading custom icon from: {self.custom_icon_path}")
+            if self._load_icon(self.custom_icon_path):
+                return True
+        
+        # Log the current working directory to help with debugging path issues
+        cwd = os.getcwd()
+        self.logger.info(f"ICON DEBUG: Current working directory: {cwd}")
+        
+        # Get all possible icon folders
+        icon_folders = self._get_icon_directories()
+        self.logger.info(f"ICON DEBUG: Searching in icon folders: {icon_folders}")
+        
+        # Search for device type icons first with multiple case variations
+        type_variations = [
+            self.device_type.lower(),
+            self.device_type,
+            self.device_type.upper(),
+            self.device_type.capitalize()
+        ]
+        
+        # Try each type variation with each icon folder
+        for folder in icon_folders:
+            for type_var in type_variations:
+                icon_path = os.path.join(folder, f"{type_var}.png")
+                self.logger.info(f"ICON DEBUG: Checking type icon at: {icon_path}")
+                if os.path.exists(icon_path):
+                    self.logger.info(f"ICON DEBUG: Found type icon at: {icon_path}")
+                    if self._load_icon(icon_path):
+                        return True
+
+        # Try the icon name specified in properties
+        icon_name = self.properties.get('icon', 'device.png')
+        if icon_name:
+            for folder in icon_folders:
+                icon_path = os.path.join(folder, icon_name)
+                self.logger.info(f"ICON DEBUG: Checking property icon at: {icon_path}")
+                if os.path.exists(icon_path):
+                    self.logger.info(f"ICON DEBUG: Found property icon at: {icon_path}")
+                    if self._load_icon(icon_path):
+                        return True
+        
+        # Try device name-based icons
+        if self._try_load_icon_by_name(self.name):
+            return True
+        
+        # Try default "generic" icon as last resort
+        for folder in icon_folders:
+            default_icon = os.path.join(folder, "device.png")
+            if os.path.exists(default_icon):
+                self.logger.info(f"ICON DEBUG: Using default icon: {default_icon}")
+                if self._load_icon(default_icon):
+                    return True
+        
+        self.logger.warning(f"ICON DEBUG: No icon found for device {self.name} of type {self.device_type}")
+        return False
+
+    def _get_icon_directories(self):
+        """Get all possible icon directories, relative to different references."""
+        import sys
+        import os.path
+        
+        # Start with current directory and known relative paths
+        icon_dirs = ["icons"]
+        
+        # Add application directory and its relative paths
+        app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.logger.info(f"ICON DEBUG: Application directory: {app_dir}")
+        
+        # Add all possible icon locations relative to the app directory
+        icon_dirs.extend([
+            os.path.join(app_dir, "icons"),
+            os.path.join(app_dir, "resources", "icons"),
+            os.path.join(app_dir, "src", "resources", "icons"),
+            os.path.join(app_dir, "src", "icons"),
+            # For development environments, try a few levels up
+            os.path.join(app_dir, "..", "resources", "icons"),
+            os.path.join(app_dir, "..", "icons"),
+        ])
+        
+        # Filter to only directories that actually exist
+        existing_dirs = [d for d in icon_dirs if os.path.isdir(d)]
+        
+        # If we found no existing directories, return the theoretical ones anyway
+        return existing_dirs if existing_dirs else icon_dirs
+
+    def _try_load_icon_by_name(self, name):
+        """Try to load an icon that matches the device name."""
+        # Normalize name (lowercase, remove spaces)
+        normalized_name = name.lower().replace(" ", "_")
+        
+        # Check for different image formats
+        extensions = ['.png', '.jpg', '.jpeg', '.svg', '.webp']
+        
+        # Get all possible icon folders
+        icon_folders = self._get_icon_directories()
+        
+        # Try each combination of folder, name variation, and extension
+        name_variations = [
+            normalized_name,
+            name,
+            name.lower(),
+        ]
+        
+        for folder in icon_folders:
+            for name_var in name_variations:
+                for ext in extensions:
+                    path = os.path.join(folder, f"{name_var}{ext}")
+                    if os.path.exists(path):
+                        self.logger.info(f"ICON DEBUG: Found matching icon at {path}")
+                        if self._load_icon(path):
+                            return True
+        
+        return False
+
     def _load_icon(self, path):
-        """Load and set the icon from the given path, cropping to fit in the square."""
+        """Load and set the icon from the given path, preserving quality."""
+        self.logger.info(f"ICON DEBUG: Attempting to load icon from: {path}")
+        
         pixmap = QPixmap(path)
         if not pixmap.isNull():
+            self.logger.info(f"ICON DEBUG: Successfully loaded pixmap from {path}, size: {pixmap.width()}x{pixmap.height()}")
+            
             # Create a new pixmap with the exact device dimensions
             square_pixmap = QPixmap(self.width, self.height)
             square_pixmap.fill(Qt.transparent)  # Make it transparent
             
-            # Calculate the source rectangle (center of the original image)
-            src_width = min(pixmap.width(), pixmap.height())
-            src_height = src_width  # Keep it square
+            # Calculate aspect ratio to maintain proportions
+            src_width = pixmap.width()
+            src_height = pixmap.height()
             
-            src_x = (pixmap.width() - src_width) // 2
-            src_y = (pixmap.height() - src_height) // 2
+            if src_width == 0 or src_height == 0:
+                self.logger.error(f"ICON DEBUG: Invalid image dimensions in {path}: {src_width}x{src_height}")
+                return False
+                
+            aspect_ratio = src_width / src_height
             
-            # Draw the center portion of the original image onto the square pixmap
+            # Determine target dimensions while maintaining aspect ratio
+            if aspect_ratio >= 1:  # Wider than tall
+                dest_width = self.width
+                dest_height = int(self.width / aspect_ratio)
+                dest_x = 0
+                dest_y = (self.height - dest_height) // 2
+            else:  # Taller than wide
+                dest_height = self.height
+                dest_width = int(self.height * aspect_ratio)
+                dest_y = 0
+                dest_x = (self.width - dest_width) // 2
+            
+            self.logger.info(f"ICON DEBUG: Scaled size: {dest_width}x{dest_height}, position: ({dest_x},{dest_y})")
+            
+            # Draw the image with high quality
             painter = QPainter(square_pixmap)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setRenderHint(QPainter.TextAntialiasing, True)
+            painter.setRenderHint(QPainter.HighQualityAntialiasing, True)
+            
+            # Draw the image centered with proper aspect ratio
             painter.drawPixmap(
-                0, 0, self.width, self.height,  # Destination rectangle
-                pixmap,
-                src_x, src_y, src_width, src_height  # Source rectangle
+                dest_x, dest_y, dest_width, dest_height,
+                pixmap
             )
             painter.end()
             
-            # Use the cropped square pixmap
+            # Check if we already have an icon item and remove it
+            if hasattr(self, 'icon_item') and self.icon_item:
+                self.logger.info("ICON DEBUG: Removing existing icon item before adding new one")
+                if self.icon_item.scene():
+                    self.scene().removeItem(self.icon_item)
+            
+            # Use the properly scaled pixmap
             self.icon_item = QGraphicsPixmapItem(square_pixmap, self)
             self.icon_item.setPos(0, 0)  # Position at top-left corner
             
-            self.logger.debug(f"Successfully loaded and cropped icon from: {path}")
+            # Make sure icon is visible
+            self.icon_item.setZValue(1)  # Put icon above the background rectangle
+            
+            self.logger.info(f"ICON DEBUG: Successfully created icon_item")
+            return True
         else:
-            self.logger.error(f"Failed to load icon from: {path}")
+            self.logger.error(f"ICON DEBUG: Failed to load icon from: {path}, pixmap is null")
+            return False
     
     def upload_custom_icon(self):
-        """Open a file dialog to upload a custom icon."""
+        """Open a file dialog to upload a custom high-resolution icon."""
         options = QFileDialog.Options()
-        file_path, _ = QFileDialog.getOpenFileName(None, "Select Custom Icon", "", "Images (*.png *.xpm *.jpg)", options=options)
+        file_path, _ = QFileDialog.getOpenFileName(
+            None, 
+            "Select High-Resolution Icon", 
+            "", 
+            "Images (*.png *.jpg *.jpeg *.bmp *.tiff *.webp)", 
+            options=options
+        )
         if file_path:
             self.custom_icon_path = file_path
-            self.logger.debug(f"Custom icon uploaded: {self.custom_icon_path}")
-            self._try_load_icon()
+            self.logger.debug(f"Custom high-resolution icon uploaded: {self.custom_icon_path}")
+            # Remove existing icon if any
+            if hasattr(self, 'icon_item') and self.icon_item:
+                if self.icon_item.scene():
+                    self.scene().removeItem(self.icon_item)
+                self.icon_item = None
+            # Load the new icon with high quality
+            self._load_icon(self.custom_icon_path)
             self.update()  # Force redraw
+            return True
+        return False
     
     def boundingRect(self):
         """Return the bounding rectangle of the device."""
@@ -428,14 +577,24 @@ class Device(QGraphicsItem):
     def update_color(self):
         """Update device visual appearance after color change."""
         if hasattr(self, 'color'):
-            # Set the color in properties dict
+            # Store the color in the properties dictionary
             if hasattr(self, 'properties'):
                 self.properties['color'] = self.color
             
-            # Update the visual appearance
+            # Update the visual appearance with the new color
             if hasattr(self, 'rect_item'):
+                # Create a new brush with the updated color
                 brush = QBrush(self.color)
                 self.rect_item.setBrush(brush)
                 
-                # Force redraw
-                self.update()
+                # Use black border regardless of color for consistency
+                self.rect_item.setPen(QPen(Qt.black, 1))
+                
+                # Force a redraw of the device
+                if self.scene():
+                    update_rect = self.sceneBoundingRect().adjusted(-5, -5, 5, 5)
+                    self.scene().update(update_rect)
+                
+                self.update()  # This calls the Qt update method
+                
+                self.logger.debug(f"Device '{self.name}' color updated to {self.color.name()}")

@@ -469,13 +469,34 @@ class Connection(QGraphicsPathItem):
     def set_routing_style(self, style):
         """Set the routing style (straight, orthogonal, curved)."""
         self.logger.debug(f"Setting routing style to {style} (was {self.routing_style})")
+        
+        # Convert string styles to integer constants for internal use
+        if isinstance(style, str):
+            style_map = {
+                "direct": self.STYLE_STRAIGHT,
+                "straight": self.STYLE_STRAIGHT,
+                "orthogonal": self.STYLE_ORTHOGONAL,
+                "curved": self.STYLE_CURVED
+            }
+            if style.lower() in style_map:
+                style = style_map[style.lower()]
+        
+        # Check if style is a valid integer value
+        if style not in (self.STYLE_STRAIGHT, self.STYLE_ORTHOGONAL, self.STYLE_CURVED):
+            self.logger.warning(f"Invalid routing style: {style}, defaulting to STRAIGHT")
+            style = self.STYLE_STRAIGHT
+        
+        # Only update if style actually changed
         if style != self.routing_style:
             self.routing_style = style
             self.update_path()
-            # Update the scene to ensure the change is visible
+            
+            # Force a more comprehensive scene update to ensure the line is visible
             if self.scene():
-                update_rect = self.boundingRect().adjusted(-10, -10, 10, 10)
-                self.scene().update(self.mapToScene(update_rect).boundingRect())
+                # Get a larger update rectangle that includes both old and new paths
+                update_rect = self.sceneBoundingRect().adjusted(-30, -30, 30, 30)
+                self.scene().update(update_rect)
+                
                 # Force update on all views
                 for view in self.scene().views():
                     view.viewport().update()

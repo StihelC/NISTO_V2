@@ -44,49 +44,6 @@ class SetItemZValueCommand(Command):
     def undo(self):
         self.item.setZValue(self.old_value)
 
-class SetItemColorCommand(Command):
-    """Command to change an item's color."""
-    
-    def __init__(self, item, old_color, new_color):
-        super().__init__(f"Change {type(item).__name__} Color")
-        self.item = item
-        self.old_color = old_color
-        self.new_color = new_color
-    
-    def execute(self):
-        # Apply the new color
-        self.item.color = self.new_color
-        
-        # Update visual appearance
-        if hasattr(self.item, 'update_color'):
-            self.item.update_color()
-        elif isinstance(self.item, Device):
-            # Special case for devices
-            if hasattr(self.item, 'properties'):
-                self.item.properties['color'] = self.new_color
-            if hasattr(self.item, 'rect_item'):
-                self.item.rect_item.setBrush(QBrush(self.new_color))
-        elif isinstance(self.item, Boundary):
-            # Special case for boundaries
-            self.item.set_color(self.new_color)
-    
-    def undo(self):
-        # Restore the old color
-        self.item.color = self.old_color
-        
-        # Update visual appearance
-        if hasattr(self.item, 'update_color'):
-            self.item.update_color()
-        elif isinstance(self.item, Device):
-            # Special case for devices
-            if hasattr(self.item, 'properties'):
-                self.item.properties['color'] = self.old_color
-            if hasattr(self.item, 'rect_item'):
-                self.item.rect_item.setBrush(QBrush(self.old_color))
-        elif isinstance(self.item, Boundary):
-            # Special case for boundaries
-            self.item.set_color(self.old_color)
-
 class PropertiesController:
     """Controller for managing properties panel interactions."""
     
@@ -102,10 +59,10 @@ class PropertiesController:
         # Connect panel signals
         self.panel.name_changed.connect(self._on_name_changed)
         self.panel.z_value_changed.connect(self._on_z_value_changed)
-        self.panel.color_changed.connect(self._on_color_changed)
         self.panel.device_property_changed.connect(self._on_device_property_changed)
         self.panel.connection_property_changed.connect(self._on_connection_property_changed)
         self.panel.boundary_property_changed.connect(self._on_boundary_property_changed)
+        self.panel.change_icon_requested.connect(self._on_change_icon_requested)  # Connect new signal
         
         # Listen to canvas selection changes
         if hasattr(canvas, 'selection_changed'):
@@ -190,44 +147,6 @@ class PropertiesController:
             item_type = type(self.selected_item).__name__.lower()
             self.event_bus.emit(f"{item_type}_layer_changed", self.selected_item)
     
-    def _on_color_changed(self, new_color):
-        """Handle color change in properties panel."""
-        if not self.selected_item or not hasattr(self.selected_item, 'color'):
-            return
-            
-        old_color = self.selected_item.color
-        if old_color != new_color:
-            self.logger.info(f"Changing color from {old_color.name()} to {new_color.name()}")
-            
-            if self.undo_redo_manager:
-                cmd = SetItemColorCommand(self.selected_item, old_color, new_color)
-                self.undo_redo_manager.push_command(cmd)
-            else:
-                # Direct change without command
-                self.selected_item.color = new_color
-                if hasattr(self.selected_item, 'update_color'):
-                    self.selected_item.update_color()
-                elif isinstance(self.selected_item, Device):
-                    # Special case for devices if update_color isn't available
-                    if hasattr(self.selected_item, 'properties'):
-                        self.selected_item.properties['color'] = new_color
-                    if hasattr(self.selected_item, 'rect_item'):
-                        self.selected_item.rect_item.setBrush(QBrush(new_color))
-                elif isinstance(self.selected_item, Boundary):
-                    # Special case for boundaries
-                    self.selected_item.set_color(new_color)
-            
-            # Force canvas update
-            self.canvas.viewport().update()
-            
-            # Notify via event bus
-            if isinstance(self.selected_item, Device):
-                self.event_bus.emit("device_color_changed", self.selected_item)
-            elif isinstance(self.selected_item, Connection):
-                self.event_bus.emit("connection_color_changed", self.selected_item)
-            elif isinstance(self.selected_item, Boundary):
-                self.event_bus.emit("boundary_color_changed", self.selected_item)
-    
     def _on_device_property_changed(self, key, value):
         """Handle device property change in properties panel."""
         if not self.selected_item or not isinstance(self.selected_item, Device):
@@ -264,13 +183,40 @@ class PropertiesController:
             
         if key == "line_style":
             # Map UI text back to internal style names
-            style_map = {"Straight": "direct", "Orthogonal": "orthogonal", "Curved": "curved"}
-            internal_style = style_map.get(value, "direct")
+            style_map = {
+                "Straight": Connection.STYLE_STRAIGHT, 
+                "Orthogonal": Connection.STYLE_ORTHOGONAL, 
+                "Curved": Connection.STYLE_CURVED
+            }
+            internal_style = style_map.get(value, Connection.STYLE_STRAIGHT)
             
-            if hasattr(self.selected_item, 'routing_style') and self.selected_item.routing_style != internal_style:
-                self.logger.info(f"Changing connection routing style from '{self.selected_item.routing_style}' to '{internal_style}'")
-                self.selected_item.set_routing_style(internal_style)
+            if self.selected_item.routing_style != internal_style:
+                self.logger.info(f"Changing connection routing style from {self.selected_item.routing_style} to {internal_style}")
                 
+                # Capture the old routing style for undo
+                old_style = self.selected_item.routing_style
+                
+                # Create a command for the routing style change if using undo/redo
+                if self.undo_redo_manager:
+                    class ChangeConnectionStyleCommand(Command):
+                        def __init__(self, connection, old_style, new_style):
+                            super().__init__("Change Connection Style")
+                            self.connection = connection
+                            self.old_style = old_style
+                            self.new_style = new_style
+                        
+                        def execute(self):
+                            self.connection.set_routing_style(self.new_style)
+                        
+                        def undo(self):
+                            self.connection.set_routing_style(self.old_style)
+                    
+                    cmd = ChangeConnectionStyleCommand(self.selected_item, old_style, internal_style)
+                    self.undo_redo_manager.push_command(cmd)
+                else:
+                    # Direct change without undo/redo
+                    self.selected_item.set_routing_style(internal_style)
+                    
                 # Notify via event bus
                 self.event_bus.emit("connection_style_changed", self.selected_item)
         
@@ -303,6 +249,9 @@ class PropertiesController:
         """Handle boundary property change in properties panel."""
         if not self.selected_item or not isinstance(self.selected_item, Boundary):
             return
-            
-        # Currently no boundary-specific properties to change from the panel
-        # Will be implemented if needed in the future
+    
+    def _on_change_icon_requested(self, item):
+        """Handle request to change a device's icon."""
+        if isinstance(item, Device):
+            self.logger.info(f"Changing icon for device: {item.name}")
+            item.upload_custom_icon()
