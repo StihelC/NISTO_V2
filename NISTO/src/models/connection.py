@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QGraphicsLineItem, QGraphicsPathItem, QGraphicsTextItem, QGraphicsItem, QMenu, QAction
-from PyQt5.QtGui import QPen, QColor, QPainterPath, QFont, QBrush
+from PyQt5.QtGui import QPen, QColor, QPainterPath, QFont, QBrush, QPainterPathStroker
 from PyQt5.QtCore import Qt, QPointF, pyqtSignal, QObject, QRectF
 import uuid
 from constants import ConnectionTypes
@@ -96,6 +96,14 @@ class Connection(QGraphicsPathItem):
         self.source_device = source_device
         self.target_device = target_device
         
+        # Debug mode
+        self.debug_selection = False
+        
+        # Initialize label immediately to avoid NoneType errors
+        self.label = None
+        
+        self.logger.info(f"Creating connection between {source_device.name} and {target_device.name}")
+        
         # Add to devices' connections list
         source_device.add_connection(self)
         target_device.add_connection(self)
@@ -105,10 +113,6 @@ class Connection(QGraphicsPathItem):
         self.target_port = target_port or target_device.get_nearest_port(source_device.get_center_position())
         self._source_port = self.source_port
         self._target_port = self.target_port
-        
-        # Debug port positions
-        self.logger.debug(f"Source port: ({self.source_port.x()}, {self.source_port.y()})")
-        self.logger.debug(f"Target port: ({self.target_port.x()}, {self.target_port.y()})")
         
         # Store raw device positions
         self.source_pos = source_device.scenePos()
@@ -121,12 +125,12 @@ class Connection(QGraphicsPathItem):
         self.latency = "0ms"  # Default latency
         
         # Style properties
-        self._line_width = 2
-        self.line_width = 2
+        self._line_width = 1  # Thinner visual lines
+        self.line_width = 1
         self.line_color = QColor(70, 70, 70)
         self.line_style = Qt.SolidLine
         self._base_color = QColor(70, 70, 70)  # Default dark gray
-        self._hover_color = QColor(0, 120, 215)  # Default bright blue (Windows accent color)
+        self._hover_color = QColor(0, 120, 215)  # Default bright blue
         self.selected_color = QColor(255, 140, 0)  # Orange
         self._text_color = QColor(40, 40, 40)  # Near black
         self._routing_style = self.STYLE_STRAIGHT
@@ -135,27 +139,25 @@ class Connection(QGraphicsPathItem):
         # Track state
         self.is_selected = False
         self.is_hover = False
-        self._was_selected = False  # Track selection state for style updates
-        self.control_points = []  # For curved paths
+        self._was_selected = False
+        self.control_points = []
         
         # Create signals object
         self.signals = ConnectionSignals()
         
-        # Interactivity
+        # Configure selectable behavior
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemIsFocusable, True)
+        self.setAcceptedMouseButtons(Qt.LeftButton | Qt.RightButton)
         self.setAcceptHoverEvents(True)
         
-        # Set lower z-value than devices (0)
-        self.setZValue(-5)
+        # Set Z-value
+        self.setZValue(-1)
         
-        # Connection label
-        self.label = None
-        
-        # Create the path before creating the label
+        # Create the path
         self.update_path()
         
-        # Now create the label after the path is created
+        # Now create the label
         self.create_label()
         
         # Setup listeners for device movement
@@ -313,7 +315,7 @@ class Connection(QGraphicsPathItem):
     
     def _update_label_position(self):
         """Place label at center of connection."""
-        if not self.label:
+        if not hasattr(self, 'label') or self.label is None:
             return
             
         # Get path center point - use safe access to path
@@ -347,7 +349,7 @@ class Connection(QGraphicsPathItem):
                 )
         
         # Only show editing UI when editing
-        if not getattr(self.label, 'editing', False):
+        if self.label and not getattr(self.label, 'editing', False):
             self.label.setTextInteractionFlags(Qt.NoTextInteraction)
     
     def set_style_for_type(self, connection_type):
@@ -502,18 +504,87 @@ class Connection(QGraphicsPathItem):
                     view.viewport().update()
     
     def paint(self, painter, option, widget=None):
-        """Custom painting."""
+        """Custom painting with debugging information."""
         # Check if selected and update style if needed
         if self.isSelected() != self._was_selected:
             self._was_selected = self.isSelected()
             self._apply_style()
         
-        # Call the parent paint method
-        super().paint(painter, option, widget)
+        # Store original pen
+        original_pen = self.pen()
+        
+        # First draw a wider transparent path for hit detection
+        hit_pen = QPen(Qt.transparent)
+        hit_pen.setWidth(10)
+        painter.setPen(hit_pen)
+        painter.drawPath(self.path())
+        
+        # Then draw the visible line
+        painter.setPen(original_pen)
+        painter.drawPath(self.path())
+        
+        # Show debug visuals if enabled
+        if self.debug_selection:
+            debug_pen = QPen(QColor(255, 0, 0, 50))
+            debug_pen.setWidth(1)
+            painter.setPen(debug_pen)
+            painter.setBrush(QBrush(QColor(255, 0, 0, 20)))
+            
+            # Draw a simple rectangle around the path instead of complex operations
+            painter.drawRect(self.path().boundingRect().adjusted(-6, -6, 6, 6))
     
+    def shape(self):
+        """Return a shape for hit detection that's wider than the visible path."""
+        # Create a wider path for better selection
+        path = QPainterPath(self.path())
+        
+        # Create a wider stroke path for better hit detection
+        pen = QPen()
+        pen.setWidth(12)  # Much wider than visible line
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        
+        # Create a stroker to expand the path
+        stroker = QPainterPathStroker(pen)
+        selection_shape = stroker.createStroke(path)
+        
+        return selection_shape
+    
+    def boundingRect(self):
+        """Override to provide a larger bounding rectangle for selection."""
+        rect = super().boundingRect()
+        return rect.adjusted(-6, -6, 6, 6)
+    
+    def mousePressEvent(self, event):
+        """Handle mouse press to improve selection."""
+        if event.button() == Qt.LeftButton:
+            # Select this connection
+            self.setSelected(True)
+            
+            # Only clear other selections if not multi-selecting
+            if not (event.modifiers() & Qt.ControlModifier) and not (event.modifiers() & Qt.ShiftModifier):
+                # Temporarily store this selection
+                was_selected = self.isSelected()
+                
+                # Clear other selections
+                scene = self.scene()
+                if scene:
+                    scene.clearSelection()
+                
+                # Restore our selection
+                self.setSelected(was_selected)
+                
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
     def itemChange(self, change, value):
         """Handle item changes like selection."""
         if change == QGraphicsItem.ItemSelectedChange:
+            # Log selection changes
+            if self.debug_selection:
+                self.logger.info(f"Connection {self.id} selection changing to: {bool(value)}")
+            
             # Emit signal when selection changes
             if value:
                 self.signals.selected.emit(self)
@@ -523,25 +594,31 @@ class Connection(QGraphicsPathItem):
             # Update appearance
             self._apply_style()
         
+        # Debug position change
+        elif change == QGraphicsItem.ItemPositionHasChanged and self.debug_selection:
+            self.logger.debug(f"Connection {self.id} position changed")
+        
         return super().itemChange(change, value)
     
     def hoverEnterEvent(self, event):
         """Handle hover enter event."""
+        if self.debug_selection:
+            self.logger.info(f"Hover enter on connection {self.id}")
+        
+        self.is_hover = True
         # Highlight connection on hover
         self.setPen(QPen(self.selected_color, self.line_width + 1, self.line_style))
         super().hoverEnterEvent(event)
     
     def hoverLeaveEvent(self, event):
         """Handle hover leave event."""
+        if self.debug_selection:
+            self.logger.info(f"Hover leave on connection {self.id}")
+        
+        self.is_hover = False
         # Restore original appearance
         self._apply_style()
         super().hoverLeaveEvent(event)
-    
-    def mouseDoubleClickEvent(self, event):
-        """Allow editing the label text on double-click."""
-        # Always start editing the label on double-click anywhere on the connection
-        self._start_label_editing()
-        super().mouseDoubleClickEvent(event)
     
     def delete(self):
         """Remove this connection."""

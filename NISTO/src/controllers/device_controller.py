@@ -487,6 +487,10 @@ class DeviceController:
             if 'latency' in connection_data:
                 connection.latency = connection_data['latency']
             
+            # Make connection selectable and focusable
+            connection.setFlag(connection.ItemIsSelectable, True)
+            connection.setFlag(connection.ItemIsFocusable, True)
+            
             # Add to scene
             self.canvas.scene().addItem(connection)
             

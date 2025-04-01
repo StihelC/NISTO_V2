@@ -32,6 +32,11 @@ class SelectMode(CanvasMode):
             # Make sure all child items are also draggable
             for child in device.childItems():
                 child.setFlag(QGraphicsItem.ItemIsMovable, True)
+        
+        # Make all connections selectable
+        for connection in self.canvas.connections:
+            connection.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            connection.setFlag(QGraphicsItem.ItemIsFocusable, True)
     
     def deactivate(self):
         """Disable dragging when leaving select mode."""
@@ -40,6 +45,9 @@ class SelectMode(CanvasMode):
         # Disable dragging for all devices
         for device in self.canvas.devices:
             device.setFlag(QGraphicsItem.ItemIsMovable, False)
+        
+        # We intentionally keep connections selectable even in other modes
+        # so they can be selected by clicking directly on them
     
     def handle_mouse_press(self, event, scene_pos, item):
         """Handle mouse button press events."""

@@ -1,4 +1,5 @@
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QMessageBox, QGraphicsItem
+from PyQt5.QtCore import Qt
 import logging
 import traceback
 
@@ -14,6 +15,9 @@ class ConnectionController:
         self.event_bus = event_bus
         self.logger = logging.getLogger(__name__)
         self.undo_redo_manager = undo_redo_manager
+        
+        # Debug flag for more verbose logging
+        self.debug_mode = True
     
     def on_add_connection_requested(self, source_device, target_device, properties=None):
         """Handle request to add a new connection."""
@@ -36,7 +40,6 @@ class ConnectionController:
             return self.on_connection_requested(source_device, target_device, source_port, target_port, properties)
         except Exception as e:
             self.logger.error(f"Error handling add connection request: {e}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return False
 
@@ -51,10 +54,9 @@ class ConnectionController:
                 return command.connection  # Return the created connection
             else:
                 # No undo/redo support, create directly
-                return self._create_connection(source_device, target_device, source_port, target_port, properties)
+                return self.create_connection(source_device, target_device, source_port, target_port, properties)
         except Exception as e:
             self.logger.error(f"Error creating connection: {e}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return None
     
@@ -110,33 +112,47 @@ class ConnectionController:
             self.canvas.viewport().update()
         except Exception as e:
             self.logger.error(f"Error in _delete_connection: {str(e)}")
-            import traceback
             traceback.print_exc()
 
     def create_connection(self, source_device, target_device, source_port=None, target_port=None, properties=None):
         """Create a connection between two devices."""
         try:
-            # Create the connection object
-            connection = Connection(source_device, target_device)
-            
-            # Determine connection type - check if it's in the expected format
-            if properties and 'type' in properties:
-                connection_type = properties['type']
-            elif properties and 'connection_type' in properties:
-                connection_type = properties['connection_type']
-            else:
-                connection_type = ConnectionTypes.ETHERNET
+            # Create the connection object with debug logging
+            if self.debug_mode:
+                self.logger.info(f"Creating connection between {source_device.name} and {target_device.name}")
                 
+            # Initialize connection - label attribute will be created inside the Connection constructor
+            connection = Connection(source_device, target_device, source_port, target_port)
+            
+            # Determine connection type
+            connection_type = ConnectionTypes.ETHERNET  # Default
+            if properties:
+                if 'type' in properties:
+                    connection_type = properties['type']
+                elif 'connection_type' in properties:
+                    connection_type = properties['connection_type']
+                
+            # Ensure the connection is selectable with additional debugging
+            connection.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            connection.setFlag(QGraphicsItem.ItemIsFocusable, True)
+            connection.setAcceptedMouseButtons(Qt.LeftButton | Qt.RightButton)
+            
+            if self.debug_mode:
+                self.logger.debug(f"Connection flags: ItemIsSelectable={bool(connection.flags() & QGraphicsItem.ItemIsSelectable)}")
+                self.logger.debug(f"Connection mouse buttons: {connection.acceptedMouseButtons()}")
+            
+            # Set connection type before setting label text
             connection.connection_type = connection_type
             
-            # Set connection label using proper display name
+            # Set connection label text
             if properties and 'label' in properties and properties['label']:
                 connection.label_text = properties['label']
             elif properties and 'label_text' in properties and properties['label_text']:
                 connection.label_text = properties['label_text']
             else:
-                # Use display name directly from ConnectionTypes
-                connection.label_text = ConnectionTypes.DISPLAY_NAMES.get(connection_type)
+                # Use display name from ConnectionTypes
+                display_name = ConnectionTypes.DISPLAY_NAMES.get(connection_type, "Link")
+                connection.label_text = display_name
             
             # Set additional properties
             if properties:
@@ -144,6 +160,10 @@ class ConnectionController:
                     connection.bandwidth = properties['bandwidth']
                 if 'latency' in properties:
                     connection.latency = properties['latency']
+            
+            # Apply visual style based on type
+            if hasattr(connection, 'set_style_for_type'):
+                connection.set_style_for_type(connection_type)
             
             # Add to scene
             self.canvas.scene().addItem(connection)
@@ -154,13 +174,11 @@ class ConnectionController:
             # Notify through event bus
             self.event_bus.emit("connection_created", connection)
             
-            self.logger.info(f"Creating connection from '{source_device.name}' to '{target_device.name}'")
-            
             return connection
-        
+            
         except Exception as e:
             self.logger.error(f"Error creating connection: {str(e)}")
-            traceback.print_exc()
+            self.logger.error(traceback.format_exc())
             return None
 
     def _show_error(self, message):
@@ -174,6 +192,9 @@ class ConnectionController:
             if isinstance(item, Connection)
         ]
         
+        if self.debug_mode:
+            self.logger.debug(f"Found {len(selected_connections)} selected connections")
+            
         if not selected_connections:
             self.logger.info("No connections selected to change style")
             return
@@ -195,12 +216,14 @@ class ConnectionController:
             if isinstance(item, Connection)
         ]
         
+        if self.debug_mode:
+            self.logger.debug(f"Found {len(selected_connections)} selected connections")
+            
         if not selected_connections:
             self.logger.info("No connections selected to change type")
             return
             
         # Get display name for connection type
-        from constants import ConnectionTypes
         display_name = ConnectionTypes.DISPLAY_NAMES.get(connection_type, "Link")
             
         self.logger.info(f"Setting connection type to {display_name} for {len(selected_connections)} connections")
@@ -218,3 +241,20 @@ class ConnectionController:
                 
         # Force update the view
         self.canvas.viewport().update()
+        
+    def get_all_connections(self):
+        """Get all connections in the canvas."""
+        return self.canvas.connections
+        
+    def debug_connections(self):
+        """Print debug information about all connections."""
+        if not self.debug_mode:
+            return
+            
+        connections = self.get_all_connections()
+        self.logger.debug(f"Total connections: {len(connections)}")
+        
+        for i, conn in enumerate(connections):
+            flags = conn.flags()
+            self.logger.debug(f"Connection {i}: ID={conn.id} | Selectable={bool(flags & QGraphicsItem.ItemIsSelectable)} | "
+                             f"Visible={conn.isVisible()} | Selected={conn.isSelected()}")
