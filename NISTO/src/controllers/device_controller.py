@@ -579,12 +579,12 @@ class DeviceController:
             # Remove any connected connections
             connected_connections = []
             for conn in self.canvas.connections[:]:  # Use a copy of the list to avoid modification during iteration
-                if conn.source == device or conn.target == device:
+                if conn.source_device == device or conn.target_device == device:
                     connected_connections.append(conn)
             
             # Use connection controller to properly delete the connections
             for conn in connected_connections:
-                self.event_bus.publish('connection.delete_requested', connection=conn)
+                self.event_bus.emit('connection.delete_requested', connection=conn)
             
             # Remove all child components first (if the device is a composite with children)
             if hasattr(device, 'childItems'):
@@ -599,8 +599,8 @@ class DeviceController:
             # Notify UI of the change
             self.canvas.viewport().update()
             
-            # Notify the event bus
-            self.event_bus.publish('device.deleted', device=device)
+            # Notify the event bus - use emit instead of publish
+            self.event_bus.emit('device.deleted', device=device)
             
             return True
         except Exception as e:

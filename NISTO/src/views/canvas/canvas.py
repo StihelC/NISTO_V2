@@ -35,6 +35,9 @@ class Canvas(QGraphicsView):
     statusMessage = pyqtSignal(str)  # Signal for status bar messages
     selection_changed = pyqtSignal(list)  # Signal for selection changes
     
+    # New signal for device alignment
+    align_devices_requested = pyqtSignal(str, list)  # alignment_type, devices
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         
@@ -249,14 +252,19 @@ class Canvas(QGraphicsView):
     def mouseMoveEvent(self, event):
         """Handle mouse move events."""
         try:
-            # Handle canvas panning
-            if self._is_panning:
+            # Handle canvas panning - only if a mouse button is pressed
+            if self._is_panning and (event.buttons() & (Qt.LeftButton | Qt.MiddleButton)):
                 self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - (event.x() - self._pan_start_x))
                 self.verticalScrollBar().setValue(self.verticalScrollBar().value() - (event.y() - self._pan_start_y))
                 self._pan_start_x = event.x()
                 self._pan_start_y = event.y()
                 event.accept()
                 return
+            elif self._is_panning and not (event.buttons() & (Qt.LeftButton | Qt.MiddleButton)):
+                # If no button is pressed but we're still in panning mode, exit panning
+                self._is_panning = False
+                self.setCursor(Qt.ArrowCursor)
+                self.setDragMode(QGraphicsView.RubberBandDrag)
             
             # Let the mode manager handle the event first
             if not self.mode_manager.handle_event("mouse_move_event", event):
@@ -270,15 +278,14 @@ class Canvas(QGraphicsView):
             
     def mouseReleaseEvent(self, event):
         """Handle mouse release events."""
-        # End canvas panning
+        # Always end canvas panning on mouse release, regardless of which button
         if self._is_panning:
-            if event.button() == Qt.MiddleButton or (event.button() == Qt.LeftButton and event.modifiers() & Qt.ShiftModifier):
-                self._is_panning = False
-                self.setCursor(Qt.ArrowCursor)
-                self.setDragMode(QGraphicsView.RubberBandDrag)  # Restore rubber band mode
-                event.accept()
-                return
-        
+            self._is_panning = False
+            self.setCursor(Qt.ArrowCursor)
+            self.setDragMode(QGraphicsView.RubberBandDrag)  # Restore rubber band mode
+            event.accept()
+            # Don't return here, allow processing to continue
+
         # Reset rubber band selection tracking
         if hasattr(self, '_rubber_band_active') and self._rubber_band_active and event.button() == Qt.LeftButton:
             self._rubber_band_active = False
@@ -318,7 +325,8 @@ class Canvas(QGraphicsView):
             self.setDragMode(QGraphicsView.RubberBandDrag)
         
         # After handling mouse release, emit selection changed signal
-        self.selection_changed.emit(self.scene().selectedItems())
+        selected_items = self.scene().selectedItems()
+        self.selection_changed.emit(selected_items)
         
     def keyPressEvent(self, event):
         """Handle key press events."""
@@ -328,7 +336,7 @@ class Canvas(QGraphicsView):
             self._temp_pan_mode = True
             event.accept()
             return
-            
+        
         # Handle delete key for selected items
         if event.key() == Qt.Key_Delete:
             selected_items = self.scene().selectedItems()
@@ -346,18 +354,17 @@ class Canvas(QGraphicsView):
         """Handle key release events."""
         # If space bar is released, exit pan mode
         if event.key() == Qt.Key_Space and hasattr(self, '_temp_pan_mode'):
-            self.setCursor(Qt.ArrowCursor)
             self._temp_pan_mode = False
+            # Also make sure to end active panning if it was started
+            if hasattr(self, '_is_panning') and self._is_panning:
+                self._is_panning = False
+            self.setCursor(Qt.ArrowCursor)
+            self.setDragMode(QGraphicsView.RubberBandDrag)
             event.accept()
             return
-            
+        
         super().keyReleaseEvent(event)
     
-    def get_item_at(self, pos):
-        """Get item at the given view position."""
-        scene_pos = self.mapToScene(pos)
-        return self.scene().itemAt(scene_pos, self.transform())
-        
     def scene(self):
         """Get the graphics scene."""
         return self._scene
@@ -424,3 +431,15 @@ class Canvas(QGraphicsView):
             self.logger.debug(f"Device {i} ({device.name}): movable={is_movable}, selectable={is_selectable}")
         
         self.logger.debug("================================")
+    
+    # Add methods to support alignment operations
+    def align_selected_devices(self, alignment_type):
+        """Align selected devices according to the specified type."""
+        selected_devices = [item for item in self.scene().selectedItems() 
+                          if item in self.devices]
+        if len(selected_devices) < 2:
+            self.statusMessage.emit("At least two devices must be selected for alignment")
+            return
+            
+        # Emit signal for controller to handle
+        self.align_devices_requested.emit(alignment_type, selected_devices)

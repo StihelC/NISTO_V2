@@ -389,3 +389,49 @@ class CompositeCommand(Command):
             # Reset the flag when done
             if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
                 self.undo_redo_manager.is_executing_command = old_state
+
+
+class AlignDevicesCommand(Command):
+    """Command to align multiple devices."""
+    
+    def __init__(self, alignment_controller, devices, original_positions, alignment_type):
+        super().__init__(f"Align Devices {alignment_type}")
+        self.alignment_controller = alignment_controller
+        self.devices = devices
+        self.original_positions = original_positions
+        self.alignment_type = alignment_type
+        self.new_positions = {device: device.scenePos() for device in devices}
+        self.logger = logging.getLogger(__name__)
+    
+    def execute(self):
+        """Execute the alignment (already done, just for interface conformity)."""
+        # The alignment has already been performed, this is just for conformity
+        pass
+    
+    def undo(self):
+        """Restore the original positions of the devices."""
+        self.logger.debug(f"Undoing alignment of {len(self.devices)} devices")
+        
+        for device, orig_pos in self.original_positions.items():
+            if device.scene():  # Check if device still exists in scene
+                device.setPos(orig_pos)
+                if hasattr(device, 'update_connections'):
+                    device.update_connections()
+        
+        # Force canvas update
+        if hasattr(self.alignment_controller, 'canvas') and self.alignment_controller.canvas:
+            self.alignment_controller.canvas.viewport().update()
+    
+    def redo(self):
+        """Re-apply the alignment."""
+        self.logger.debug(f"Redoing alignment of {len(self.devices)} devices")
+        
+        for device, new_pos in self.new_positions.items():
+            if device.scene():  # Check if device still exists in scene
+                device.setPos(new_pos)
+                if hasattr(device, 'update_connections'):
+                    device.update_connections()
+        
+        # Force canvas update
+        if hasattr(self.alignment_controller, 'canvas') and self.alignment_controller.canvas:
+            self.alignment_controller.canvas.viewport().update()

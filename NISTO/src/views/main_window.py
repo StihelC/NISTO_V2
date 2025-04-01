@@ -16,6 +16,9 @@ from models.connection import Connection
 from models.boundary import Boundary
 from views.properties_panel import PropertiesPanel
 from controllers.properties_controller import PropertiesController
+from views.alignment_toolbar import AlignmentToolbar
+from controllers.alignment_controller import AlignmentController
+from controllers.commands import AlignDevicesCommand
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -93,6 +96,9 @@ class MainWindow(QMainWindow):
         # Add this line at the end of the __init__ method to maximize the window on startup
         self.showMaximized()
 
+        # Setup alignment tools
+        self.setup_alignment_tools()
+
     def setup_properties_controller(self):
         """Set up the properties controller after command_manager is initialized."""
         if self.properties_controller is None:
@@ -102,6 +108,43 @@ class MainWindow(QMainWindow):
                 self.event_bus,
                 self.command_manager.undo_redo_manager if self.command_manager else None
             )
+
+    def setup_alignment_tools(self):
+        """Set up the alignment toolbar and controller."""
+        # Create alignment controller
+        self.alignment_controller = AlignmentController(
+            self.canvas, 
+            self.event_bus, 
+            self.command_manager.undo_redo_manager if (hasattr(self, 'command_manager') and self.command_manager) else None
+        )
+        
+        # Create alignment toolbar
+        self.alignment_toolbar = AlignmentToolbar(self, self.alignment_controller)
+        self.addToolBar(Qt.TopToolBarArea, self.alignment_toolbar)
+        
+        # Connect selection changed signal to update toolbar state
+        self.canvas.selection_changed.connect(self.alignment_toolbar.update_actions_state)
+        
+        # Connect alignment signals - use the correct method for your EventBus implementation
+        if self.event_bus:
+            # Use on() method instead of subscribe() or register()
+            self.event_bus.on('devices.aligned', self.on_devices_aligned)
+
+    def on_devices_aligned(self, devices, original_positions, alignment_type):
+        """Handle device alignment for undo/redo support."""
+        if hasattr(self, 'command_manager') and self.command_manager and hasattr(self.command_manager, 'undo_redo_manager'):
+            # Create command for undo/redo
+            command = AlignDevicesCommand(
+                self.alignment_controller,
+                devices,
+                original_positions,
+                alignment_type
+            )
+            
+            # Push command to undo stack
+            self.command_manager.undo_redo_manager.push_command(command)
+            
+            self.logger.debug(f"Added alignment command to undo stack: {alignment_type}")
 
     def _create_file_menu(self):
         """Create the File menu with save/load actions."""
