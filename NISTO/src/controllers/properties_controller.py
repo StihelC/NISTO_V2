@@ -63,6 +63,7 @@ class PropertiesController:
         self.panel.connection_property_changed.connect(self._on_connection_property_changed)
         self.panel.boundary_property_changed.connect(self._on_boundary_property_changed)
         self.panel.change_icon_requested.connect(self._on_change_icon_requested)  # Connect new signal
+        self.panel.property_display_toggled.connect(self._on_property_display_toggled)  # Connect the new signal
         
         # Listen to canvas selection changes
         if hasattr(canvas, 'selection_changed'):
@@ -176,6 +177,15 @@ class PropertiesController:
                 self.logger.info(f"Changing device property '{key}' from '{old_value}' to '{value}'")
                 self.selected_item.properties[key] = value
                 
+                # We don't need to update the checkbox text since it now shows the property name
+                # instead of the value
+                
+                # If this property is displayed under the icon, update it
+                if (hasattr(self.selected_item, 'display_properties') and 
+                    key in self.selected_item.display_properties and 
+                    self.selected_item.display_properties[key]):
+                    self.selected_item.update_property_labels()
+                
                 # Notify via event bus
                 self.event_bus.emit("device_property_changed", self.selected_item, key)
     
@@ -254,3 +264,54 @@ class PropertiesController:
         if isinstance(item, Device):
             self.logger.info(f"Changing icon for device: {item.name}")
             item.upload_custom_icon()
+    
+    def _on_property_display_toggled(self, prop_name, display_enabled):
+        """Handle toggling of property display under device icons."""
+        if not self.selected_item or not isinstance(self.selected_item, Device):
+            return
+            
+        # Ensure the display_properties dict exists
+        if not hasattr(self.selected_item, 'display_properties'):
+            self.selected_item.display_properties = {}
+            
+        # Set the display preference for this property
+        old_value = self.selected_item.display_properties.get(prop_name, False)
+        if old_value != display_enabled:
+            self.logger.info(f"Toggling display of property '{prop_name}' to {display_enabled}")
+            
+            if self.undo_redo_manager:
+                cmd = TogglePropertyDisplayCommand(self.selected_item, prop_name, old_value, display_enabled)
+                self.undo_redo_manager.push_command(cmd)
+            else:
+                self.selected_item.display_properties[prop_name] = display_enabled
+                self.selected_item.update_property_labels()
+                
+            # Force canvas update
+            self.canvas.viewport().update()
+            
+            # Notify via event bus
+            self.event_bus.emit("device_display_properties_changed", self.selected_item)
+            
+
+class TogglePropertyDisplayCommand(Command):
+    """Command for toggling device property display."""
+    
+    def __init__(self, device, property_name, old_state, new_state):
+        """Initialize the command."""
+        super().__init__(f"Toggle Display of '{property_name}'")
+        self.device = device
+        self.property_name = property_name
+        self.old_state = old_state
+        self.new_state = new_state
+        
+    def execute(self):
+        """Execute the command."""
+        if not hasattr(self.device, 'display_properties'):
+            self.device.display_properties = {}
+        self.device.display_properties[self.property_name] = self.new_state
+        self.device.update_property_labels()
+        
+    def undo(self):
+        """Undo the command."""
+        self.device.display_properties[self.property_name] = self.old_state
+        self.device.update_property_labels()

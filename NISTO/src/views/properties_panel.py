@@ -17,6 +17,7 @@ class PropertiesPanel(QWidget):
     connection_property_changed = pyqtSignal(str, object)
     boundary_property_changed = pyqtSignal(str, object)
     change_icon_requested = pyqtSignal(object)  # New signal for icon change
+    property_display_toggled = pyqtSignal(str, bool)  # New signal for toggling property display
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -97,6 +98,27 @@ class PropertiesPanel(QWidget):
         self.change_icon_button = QPushButton("Change Icon")
         self.change_icon_button.clicked.connect(self._on_change_icon_clicked)
         layout.addRow("Icon:", self.change_icon_button)
+        
+        # Display options group
+        display_group = QGroupBox("Display Options")
+        display_layout = QVBoxLayout(display_group)
+        self.display_checkboxes = {}
+        
+        # Label for display options
+        display_layout.addWidget(QLabel("Show properties under icon:"))
+        
+        # Create a scrollable area for checkboxes when there are many properties
+        checkbox_scroll = QScrollArea()
+        checkbox_scroll.setWidgetResizable(True)
+        checkbox_scroll.setFrameShape(QScrollArea.NoFrame)
+        checkbox_content = QWidget()
+        checkbox_layout = QVBoxLayout(checkbox_content)
+        checkbox_layout.setContentsMargins(0, 0, 0, 0)
+        checkbox_scroll.setWidget(checkbox_content)
+        self.checkbox_layout = checkbox_layout  # Store for later use
+        
+        display_layout.addWidget(checkbox_scroll)
+        layout.addRow(display_group)
         
         # Custom properties table
         self.device_props_table = QTableWidget(0, 2)
@@ -214,6 +236,17 @@ class PropertiesPanel(QWidget):
         # Clear and repopulate properties table
         self.device_props_table.setRowCount(0)
         
+        # Clear any existing display option checkboxes
+        for checkbox in self.display_checkboxes.values():
+            checkbox.setParent(None)
+        self.display_checkboxes.clear()
+        
+        # Clear the checkbox layout
+        while self.checkbox_layout.count():
+            item = self.checkbox_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
         if hasattr(device, 'properties'):
             row = 0
             for key, value in device.properties.items():
@@ -231,6 +264,19 @@ class PropertiesPanel(QWidget):
                 # Add property value (convert to string if needed)
                 value_str = str(value) if not isinstance(value, str) else value
                 self.device_props_table.setItem(row, 1, QTableWidgetItem(value_str))
+                
+                # Create display option checkbox - show the property name
+                checkbox = QCheckBox(key)
+                is_displayed = False
+                if hasattr(device, 'display_properties') and key in device.display_properties:
+                    is_displayed = device.display_properties[key]
+                checkbox.setChecked(is_displayed)
+                
+                # Connect with lambda capturing the current key
+                checkbox.toggled.connect(lambda checked, k=key: self.property_display_toggled.emit(k, checked))
+                
+                self.display_checkboxes[key] = checkbox
+                self.checkbox_layout.addWidget(checkbox)
                 
                 row += 1
         

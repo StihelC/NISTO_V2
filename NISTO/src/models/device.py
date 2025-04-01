@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsTextItem, QFileDialog
-from PyQt5.QtGui import QPixmap, QColor, QPen, QBrush, QPainterPath, QPainter
+from PyQt5.QtGui import QPixmap, QColor, QPen, QBrush, QPainterPath, QPainter, QFont
 from PyQt5.QtCore import QRectF, Qt, QPointF, QObject, pyqtSignal
 import uuid
 import os
@@ -13,7 +13,7 @@ class DeviceSignals(QObject):
     double_clicked = pyqtSignal(object)  # device
     deleted = pyqtSignal(object)  # device
 
-class Device(QGraphicsItem):
+class Device(QGraphicsPixmapItem):
     """Represents a network device in the topology."""
     
     # Device properties organized by type
@@ -107,6 +107,12 @@ class Device(QGraphicsItem):
         self.rect_item = None
         self.text_item = None
         self.icon_item = None
+        
+        # Initialize display properties dictionary
+        self.display_properties = {}
+        
+        # Create property labels dictionary
+        self.property_labels = {}
         
         # Create child items
         self._create_visuals()
@@ -503,7 +509,7 @@ class Device(QGraphicsItem):
     
     def _distance(self, p1, p2):
         """Calculate distance between two points."""
-        return ((p1.x() - p2.x()) ** 2 + (p1.y() - p2.y()) ** 2) ** 0.5
+        return ((p1.x() - p2.x()) ** 2 + (p2.y() - p2.y()) ** 2) ** 0.5
     
     def setProperty(self, name, value):
         """Set a custom property."""
@@ -563,9 +569,9 @@ class Device(QGraphicsItem):
                 text_width = child.boundingRect().width()
                 text_x = (self.width - text_width) / 2
                 child.setPos(text_x, self.height + 5)
-            # All other children should be at 0,0 relative to device
-            elif child.pos() != QPointF(0, 0):
-                child.setPos(QPointF(0, 0))
+        
+        # Update property labels positions as they may have been affected
+        self._update_property_label_positions()
         
         # Emit signal that device has moved
         if hasattr(self, 'signals'):
@@ -573,6 +579,27 @@ class Device(QGraphicsItem):
         
         # Update connections
         self.update_connections()
+
+    def _update_property_label_positions(self):
+        """Update the position of property labels to keep them properly aligned."""
+        if not self.property_labels:
+            return
+            
+        # Calculate the correct starting position below the device name
+        name_bottom = self.height + self.text_item.boundingRect().height() + 5
+        
+        # Reposition each property label
+        i = 0
+        for prop, label in self.property_labels.items():
+            # Center the label horizontally
+            x_pos = (self.width - label.boundingRect().width()) / 2
+            
+            # Position each property below the name with spacing
+            y_pos = name_bottom + (i * (label.boundingRect().height() + 2))
+            
+            # Update position
+            label.setPos(x_pos, y_pos)
+            i += 1
 
     def update_connections(self):
         """Update all connections attached to this device."""
@@ -633,6 +660,9 @@ class Device(QGraphicsItem):
                 text_width = self.text_item.boundingRect().width()
                 text_x = (self.width - text_width) / 2
                 self.text_item.setPos(text_x, self.height + 5)
+            
+            # Update property positions as name might have changed size
+            self.update_property_labels()
 
     def update_color(self):
         """Update device visual appearance after color change."""
@@ -674,3 +704,50 @@ class Device(QGraphicsItem):
             for child in self.childItems():
                 # Use setFlag directly instead of setFlags
                 child.setFlag(QGraphicsItem.ItemIsMovable, enabled)
+
+    def update_property_labels(self):
+        """Update the property labels displayed under the device icon."""
+        # Remove all existing property labels
+        for label in self.property_labels.values():
+            scene = label.scene()
+            if scene:
+                scene.removeItem(label)
+        self.property_labels.clear()
+        
+        # Get properties to display
+        display_props = []
+        for prop, show in self.display_properties.items():
+            if show and prop in self.properties:
+                display_props.append((prop, str(self.properties[prop])))
+        
+        # If no properties to display, just return
+        if not display_props:
+            return
+        
+        # Calculate the correct starting position
+        # It should be right below the device name text
+        name_bottom = self.height + self.text_item.boundingRect().height() + 5
+        
+        # Create new labels for selected properties
+        for i, (prop, value) in enumerate(display_props):
+            label = QGraphicsTextItem(self)
+            # Only show the value, not the property name
+            label.setPlainText(value)
+            label.setFont(QFont("Arial", 8))
+            
+            # Center the label horizontally
+            x_pos = (self.width - label.boundingRect().width()) / 2
+            
+            # Position each property below the name with spacing
+            y_pos = name_bottom + (i * (label.boundingRect().height() + 2))
+            
+            # Position the label
+            label.setPos(x_pos, y_pos)
+            self.property_labels[prop] = label
+            
+            # Set high Z value to ensure visibility
+            label.setZValue(5)
+        
+        # Force a scene update if we're in a scene
+        if self.scene():
+            self.scene().update(self.sceneBoundingRect().adjusted(-5, -5, 5, 5))
