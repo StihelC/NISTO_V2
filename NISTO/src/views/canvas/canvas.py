@@ -211,9 +211,9 @@ class Canvas(QGraphicsView):
                     parent_device.setFlag(QGraphicsItem.ItemIsMovable, True)
                     parent_device.setFlag(QGraphicsItem.ItemIsSelectable, True)
                     
-                    # Don't try to forward the QMouseEvent directly to QGraphicsItem
-                    # Instead, just let the system handle the event normally
-                    if not (event.modifiers() & Qt.ControlModifier):
+                    # Don't clear selection if the device is already selected or if Ctrl is pressed
+                    # This is the key change to preserve multi-selection
+                    if not parent_device.isSelected() and not (event.modifiers() & Qt.ControlModifier):
                         self.scene().clearSelection()
                     parent_device.setSelected(True)
                         
