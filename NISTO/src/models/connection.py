@@ -268,96 +268,117 @@ class Connection(QGraphicsPathItem):
     
     def update_path(self):
         """Update the connection path based on current device positions."""
-        # Re-calculate ports in case devices moved
-        self._source_port = self._find_best_port(self.source_device, self.target_device)
-        self._target_port = self._find_best_port(self.target_device, self.source_device)
-        
-        # Create path based on routing style
-        path = QPainterPath()
-        path.moveTo(self._source_port)
-        
-        if self.routing_style == self.STYLE_STRAIGHT:
-            # Simple straight line
-            path.lineTo(self._target_port)
+        try:
+            # Store current label text before updating
+            current_label_text = None
+            if hasattr(self, 'label') and self.label:
+                current_label_text = self.label.toPlainText()
+            elif hasattr(self, '_label_text'):
+                current_label_text = self._label_text
             
-        elif self.routing_style == self.STYLE_ORTHOGONAL:
-            # Right-angle connections (Manhattan routing)
-            sx, sy = self._source_port.x(), self._source_port.y()
-            tx, ty = self._target_port.x(), self._target_port.y()
+            # Re-calculate ports in case devices moved
+            if hasattr(self, '_find_best_port'):
+                self._source_port = self._find_best_port(self.source_device, self.target_device)
+                self._target_port = self._find_best_port(self.target_device, self.source_device)
             
-            # Determine direction based on relative positions
-            dx, dy = tx - sx, ty - sy
+            # Create path based on routing style
+            path = QPainterPath()
+            path.moveTo(self._source_port)
             
-            if abs(dx) > abs(dy):
-                # Horizontal dominant - go horizontally first
-                path.lineTo(sx + dx/2, sy)
-                path.lineTo(sx + dx/2, ty)
-            else:
-                # Vertical dominant - go vertically first
-                path.lineTo(sx, sy + dy/2)
-                path.lineTo(tx, sy + dy/2)
+            if self.routing_style == self.STYLE_STRAIGHT:
+                # Simple straight line
+                path.lineTo(self._target_port)
                 
-            path.lineTo(tx, ty)
+            elif self.routing_style == self.STYLE_ORTHOGONAL:
+                # Right-angle connections (Manhattan routing)
+                sx, sy = self._source_port.x(), self._source_port.y()
+                tx, ty = self._target_port.x(), self._target_port.y()
+                
+                # Determine direction based on relative positions
+                dx, dy = tx - sx, ty - sy
+                
+                if abs(dx) > abs(dy):
+                    # Horizontal dominant - go horizontally first
+                    path.lineTo(sx + dx/2, sy)
+                    path.lineTo(sx + dx/2, ty)
+                else:
+                    # Vertical dominant - go vertically first
+                    path.lineTo(sx, sy + dy/2)
+                    path.lineTo(tx, sy + dy/2)
+                    
+                path.lineTo(tx, ty)
+                
+            elif self.routing_style == self.STYLE_CURVED:
+                # Bezier curve
+                sx, sy = self._source_port.x(), self._source_port.y()
+                tx, ty = self._target_port.x(), self._target_port.y()
+                
+                # Control points at 1/3 and 2/3 of the path
+                dx, dy = tx - sx, ty - sy
+                cp1 = QPointF(sx + dx/3, sy)
+                cp2 = QPointF(tx - dx/3, ty)
+                
+                path.cubicTo(cp1, cp2, self._target_port)
             
-        elif self.routing_style == self.STYLE_CURVED:
-            # Bezier curve
-            sx, sy = self._source_port.x(), self._source_port.y()
-            tx, ty = self._target_port.x(), self._target_port.y()
+            # Set the path
+            self.setPath(path)
             
-            # Control points at 1/3 and 2/3 of the path
-            dx, dy = tx - sx, ty - sy
-            cp1 = QPointF(sx + dx/3, sy)
-            cp2 = QPointF(tx - dx/3, ty)
+            # Ensure we preserve the label
+            if not hasattr(self, 'label') or not self.label:
+                self.create_label()
             
-            path.cubicTo(cp1, cp2, self._target_port)
-        
-        # Log path creation
-        self.logger.debug(f"Path updated for routing style: {self.routing_style}")
-        
-        # Set the path
-        self.setPath(path)
-        
-        # Always update label position when path changes
-        self._update_label_position()
-    
+            # Always set the label text to preserve it
+            if current_label_text:
+                self._label_text = current_label_text  # Store in attribute
+                self.label.setPlainText(current_label_text)  # Update the visual label
+            
+            # Update label position
+            self._update_label_position()
+            
+        except Exception as e:
+            self.logger.error(f"Error updating path: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+
     def _update_label_position(self):
         """Place label at center of connection."""
-        if not hasattr(self, 'label') or self.label is None:
-            return
-            
-        # Get path center point - use safe access to path
-        # Fix: Use QGraphicsPathItem's path method instead of stored path attribute
-        path = self.path()
-        if path and not path.isEmpty():
-            center_point = path.pointAtPercent(0.5)
-            
-            # Position the label precisely at the center
-            label_width = self.label.boundingRect().width()
-            label_height = self.label.boundingRect().height()
-            
-            self.label.setPos(
-                center_point.x() - label_width/2,
-                center_point.y() - label_height/2
-            )
-        else:
-            # Fallback if no valid path exists yet
-            # Use the midpoint between source and target ports
-            if hasattr(self, '_source_port') and hasattr(self, '_target_port'):
-                mid_x = (self._source_port.x() + self._target_port.x()) / 2
-                mid_y = (self._source_port.y() + self._target_port.y()) / 2
+        try:
+            # First check if label exists
+            if not hasattr(self, 'label') or self.label is None:
+                return
                 
-                # Position label at this midpoint
+            # Get path center point - use safe access to path
+            path = self.path()
+            if path and not path.isEmpty():
+                # Calculate center point of the path
+                center_point = path.pointAtPercent(0.5)
+                
+                # Position the label precisely at the center, accounting for label size
                 label_width = self.label.boundingRect().width()
                 label_height = self.label.boundingRect().height()
                 
+                # Position label at center point, offset by half its dimensions
                 self.label.setPos(
-                    mid_x - label_width/2,
-                    mid_y - label_height/2
+                    center_point.x() - label_width/2,
+                    center_point.y() - label_height/2
                 )
-        
-        # Only show editing UI when editing
-        if self.label and not getattr(self.label, 'editing', False):
-            self.label.setTextInteractionFlags(Qt.NoTextInteraction)
+            else:
+                # Fallback if no valid path exists
+                if hasattr(self, '_source_port') and hasattr(self, '_target_port'):
+                    # Use midpoint between source and target ports
+                    mid_x = (self._source_port.x() + self._target_port.x()) / 2
+                    mid_y = (self._source_port.y() + self._target_port.y()) / 2
+                    
+                    # Position label at this midpoint
+                    label_width = self.label.boundingRect().width()
+                    label_height = self.label.boundingRect().height()
+                    
+                    self.label.setPos(
+                        mid_x - label_width/2,
+                        mid_y - label_height/2
+                    )
+        except Exception as e:
+            self.logger.error(f"Error updating label position: {str(e)}")
     
     def set_style_for_type(self, connection_type):
         """Set the visual style based on the connection type."""

@@ -177,25 +177,67 @@ class Canvas(QGraphicsView):
             scene_pos = self.mapToScene(event.pos())
             item = self.get_item_at(event.pos())
             
-            # Special case for empty clicks in select mode
+            # Special handling for device dragging in select mode
+            if (event.button() == Qt.LeftButton and 
+                self.mode_manager.current_mode == Modes.SELECT):
+                
+                # First check if we need to redirect to a parent device
+                parent_device = None
+                
+                # Handle direct click on device
+                if item in self.devices:
+                    parent_device = item
+                # Handle click on child component by redirecting to parent
+                elif item and item.parentItem() and item.parentItem() in self.devices:
+                    parent_device = item.parentItem()
+                    # Important: We need to redirect the event to the parent
+                    item = parent_device
+                
+                if parent_device:
+                    # Save starting position for undo/redo tracking
+                    self._drag_start_pos = parent_device.scenePos()
+                    self._drag_item = parent_device
+                    
+                    # Make sure we're in NoDrag mode for device dragging
+                    self.setDragMode(QGraphicsView.NoDrag)
+                    
+                    # Ensure all children have proper flags
+                    for child in parent_device.childItems():
+                        child.setFlag(QGraphicsItem.ItemIsMovable, False)
+                        child.setFlag(QGraphicsItem.ItemIsSelectable, False)
+                        child.setAcceptedMouseButtons(Qt.NoButton)
+                    
+                    # Make sure the parent device is properly draggable
+                    parent_device.setFlag(QGraphicsItem.ItemIsMovable, True)
+                    parent_device.setFlag(QGraphicsItem.ItemIsSelectable, True)
+                    
+                    # Don't try to forward the QMouseEvent directly to QGraphicsItem
+                    # Instead, just let the system handle the event normally
+                    if not (event.modifiers() & Qt.ControlModifier):
+                        self.scene().clearSelection()
+                    parent_device.setSelected(True)
+                        
+                    # Let Qt handle the drag
+                    super().mousePressEvent(event)
+                    return
+            
+            # Handle rubber band selection for empty space clicks
             if not item and event.button() == Qt.LeftButton and self.mode_manager.current_mode == Modes.SELECT:
-                # Clear selection and prepare for rubber band
+                # Clear selection if not adding to selection
                 if not (event.modifiers() & Qt.ControlModifier):
                     self.scene().clearSelection()
                 
-                # Important: Use NoDrag first to reset any existing drag state
-                self.setDragMode(QGraphicsView.NoDrag)
-                # Now set rubber band mode
+                # Set rubber band mode
                 self.setDragMode(QGraphicsView.RubberBandDrag)
                 
-                # Let Qt handle the rubber band natively
+                # Let Qt handle the rubber band
                 super().mousePressEvent(event)
                 return
             
             # Let the mode manager handle the event
             handled = self.mode_manager.handle_event("mouse_press_event", event, scene_pos, item)
             
-            # If it wasn't handled by our mode, let Qt handle it for built-in rubber band selection
+            # If not handled, pass to default implementation
             if not handled:
                 super().mousePressEvent(event)
                 

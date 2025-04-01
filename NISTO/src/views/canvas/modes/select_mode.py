@@ -37,9 +37,12 @@ class SelectMode(CanvasMode):
             device.setFlag(QGraphicsItem.ItemIsMovable, True)
             device.setFlag(QGraphicsItem.ItemIsSelectable, True)
             
-            # Make sure all child items are also draggable
+            # Force all child items to be non-draggable and not independently selectable
             for child in device.childItems():
-                child.setFlag(QGraphicsItem.ItemIsMovable, True)
+                child.setFlag(QGraphicsItem.ItemIsMovable, False)
+                child.setFlag(QGraphicsItem.ItemIsSelectable, False)
+                # This is critical - disable mouse events on child items
+                child.setAcceptedMouseButtons(Qt.NoButton)
         
         # Make all connections selectable and focusable
         for connection in self.canvas.connections:
@@ -80,42 +83,67 @@ class SelectMode(CanvasMode):
             
             # Check if we clicked on a selectable item
             selectable_item = None
+            original_item = item
             
-            # Check for device or child of device
-            if isinstance(item, Device) or (item and item.parentItem() and isinstance(item.parentItem(), Device)):
-                selectable_item = item if isinstance(item, Device) else item.parentItem()
-                # ...existing code for device selection...
+            # Check for device or child of device - Improve this logic
+            if isinstance(item, Device):
+                selectable_item = item
+                self.logger.debug(f"Clicked directly on device: {selectable_item.name}")
+            elif item and item.parentItem() and isinstance(item.parentItem(), Device):
+                # When clicking any part of the device, always select/drag the parent
+                selectable_item = item.parentItem()
+                self.logger.debug(f"Clicked on device part, selecting parent: {selectable_item.name}")
+                # Special case - force the event to be handled by the parent
+                item = selectable_item
             # Check for connection
             elif isinstance(item, Connection):
                 selectable_item = item
-                # ...existing code for connection selection...
+                self.logger.debug(f"Clicked on connection with ID: {selectable_item.id}")
             # Check for boundary
             elif isinstance(item, Boundary):
                 selectable_item = item
-                # ...existing code for boundary selection...
+                self.logger.debug(f"Clicked on boundary: {selectable_item.name}")
             
             # If we found a selectable item
             if selectable_item:
                 self.click_item = selectable_item
                 
-                # If Shift is not pressed, clear selection first
-                if not (event.modifiers() & Qt.ShiftModifier) and not selectable_item.isSelected():
+                # If not adding to selection, clear current selection first
+                if not (event.modifiers() & Qt.ControlModifier) and not selectable_item.isSelected():
                     self.canvas.scene().clearSelection()
                 
                 # Select the item
                 selectable_item.setSelected(True)
                 
-                # Emit selection changed signal
-                self.canvas.selection_changed.emit(self.canvas.scene().selectedItems())
-                
-                # Only set NoDrag mode for devices (connections can't be dragged)
-                if isinstance(selectable_item, Device):
-                    self.canvas.setDragMode(self.canvas.NoDrag)
-                
-                return True  # Event handled
+                # Only devices and boundaries can be dragged
+                if isinstance(selectable_item, Device) or isinstance(selectable_item, Boundary):
+                    # Make sure it's set as movable
+                    selectable_item.setFlag(QGraphicsItem.ItemIsMovable, True)
+                    
+                    # Important: If we clicked on a child item but are dragging the parent,
+                    # we need to let the event system know we're handling this item
+                    if original_item != selectable_item:
+                        # Forward this event to the parent device to start dragging it
+                        event.accept()
+                        selectable_item.mousePressEvent(event)
+                    
+                    # Return False to allow Qt's native drag behavior to kick in
+                    self.canvas.selection_changed.emit(self.canvas.scene().selectedItems())
+                    return False
+                else:
+                    # For connections, just emit the selection signal and don't allow dragging
+                    self.canvas.selection_changed.emit(self.canvas.scene().selectedItems())
+                    return True
             else:
-                # Clicked on empty space - don't handle it here
-                # Let the Canvas class handle it directly for rubber band selection
+                # Clicked on empty space - prepare for rubber band selection
+                self.logger.debug("Clicked on empty space, preparing for rubber band selection")
+                
+                # Clear selection if Control isn't pressed
+                if not (event.modifiers() & Qt.ControlModifier):
+                    self.canvas.scene().clearSelection()
+                    self.canvas.selection_changed.emit([])
+                
+                # Let Qt handle rubber band selection
                 return False
         
         return False

@@ -118,6 +118,13 @@ class Device(QGraphicsItem):
             self.icon_item.setParentItem(self)
         if self.rect_item:
             self.rect_item.setParentItem(self)
+        
+        # Make device children non-movable by default
+        # This ensures that device components can't be moved separately
+        for child in self.childItems():
+            child.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            child.setFlag(QGraphicsItem.ItemIsMovable, False)
+            child.setAcceptedMouseButtons(Qt.NoButton)
     
     def _init_properties(self, custom_properties=None):
         """Initialize the device properties based on type and custom values."""
@@ -542,6 +549,44 @@ class Device(QGraphicsItem):
             self.signals.double_clicked.emit(self)
         super().mouseDoubleClickEvent(event)
     
+    def mouseMoveEvent(self, event):
+        """Handle mouse move events to keep all components together."""
+        # Call the base implementation to handle the actual dragging
+        super().mouseMoveEvent(event)
+        
+        # Make sure all child items stay aligned with the device
+        # This is redundant but ensures integrity in case something goes wrong
+        for child in self.childItems():
+            # Special handling for text_item (label) which should remain at its position below the device
+            if child == self.text_item:
+                # Ensure label stays centered under the device
+                text_width = child.boundingRect().width()
+                text_x = (self.width - text_width) / 2
+                child.setPos(text_x, self.height + 5)
+            # All other children should be at 0,0 relative to device
+            elif child.pos() != QPointF(0, 0):
+                child.setPos(QPointF(0, 0))
+        
+        # Emit signal that device has moved
+        if hasattr(self, 'signals'):
+            self.signals.moved.emit(self)
+        
+        # Update connections
+        self.update_connections()
+
+    def update_connections(self):
+        """Update all connections attached to this device."""
+        for connection in self.connections:
+            try:
+                # Use hasattr to safely check for the update_path method
+                if hasattr(connection, 'update_path'):
+                    connection.update_path()
+                # For compatibility with older code that might use different method names
+                elif hasattr(connection, '_update_path'):
+                    connection._update_path()
+            except Exception as e:
+                self.logger.error(f"Error updating connection: {str(e)}")
+
     def delete(self):
         """Clean up resources before deletion."""
         # Store scene and bounding rect before removal for later update
