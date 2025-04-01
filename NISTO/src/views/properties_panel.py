@@ -238,77 +238,55 @@ class PropertiesPanel(QWidget):
         self.device_props_table.cellChanged.connect(self._on_device_property_changed)
     
     def _display_connection_properties(self, connection):
-        """Display connection-specific properties."""
+        """Update the panel with connection-specific properties."""
         self.connection_group.show()
-        
-        # Show source and target
-        if hasattr(connection, 'source_device'):
-            self.connection_source_label.setText(connection.source_device.name)
-        
-        if hasattr(connection, 'target_device'):
-            self.connection_target_label.setText(connection.target_device.name)
-        
-        # Set connection type
-        if hasattr(connection, 'connection_type'):
-            self.connection_type_combo.blockSignals(True)
-            self.connection_type_combo.clear()
-            
-            # Import ConnectionTypes constants
-            from constants import ConnectionTypes
-            
-            # Use the DISPLAY_NAMES dictionary to populate connection types
-            for conn_type, display_name in ConnectionTypes.DISPLAY_NAMES.items():
-                self.connection_type_combo.addItem(display_name, conn_type)
-            
-            # Find and select the current connection type
-            current_type = connection.connection_type
-            index = self.connection_type_combo.findData(current_type)
-            if index >= 0:
-                self.connection_type_combo.setCurrentIndex(index)
-            self.connection_type_combo.blockSignals(False)
-        
-        # Set line style
-        if hasattr(connection, 'routing_style'):
-            self.line_style_combo.blockSignals(True)
-            
-            # Map integer constants to UI strings
-            style_map = {
-                0: "Straight",   # STYLE_STRAIGHT
-                1: "Orthogonal", # STYLE_ORTHOGONAL
-                2: "Curved"      # STYLE_CURVED
-            }
-            
-            # Get the style name for the current style
-            style_name = style_map.get(connection.routing_style, "Straight")
-            self.line_style_combo.setCurrentText(style_name)
-            self.line_style_combo.blockSignals(False)
         
         # Disconnect signal to prevent firing while updating
         self.connection_props_table.cellChanged.disconnect(self._on_connection_property_changed)
         
-        # Clear and repopulate properties table
+        # Clear previous properties
         self.connection_props_table.setRowCount(0)
         
-        # Add connection properties
-        props = []
-        if hasattr(connection, 'bandwidth'):
-            props.append(("Bandwidth", connection.bandwidth))
-        if hasattr(connection, 'latency'):
-            props.append(("Latency", connection.latency))
-        if hasattr(connection, 'label_text'):
-            props.append(("Label", connection.label_text))
+        # Set routing style in combo box
+        if hasattr(connection, 'routing_style'):
+            style_index = {
+                connection.STYLE_STRAIGHT: 0,
+                connection.STYLE_ORTHOGONAL: 1,
+                connection.STYLE_CURVED: 2
+            }.get(connection.routing_style, 0)
+            self.line_style_combo.setCurrentIndex(style_index)
         
-        for row, (key, value) in enumerate(props):
-            self.connection_props_table.insertRow(row)
+        # Display core connection properties
+        properties = []
+        
+        # Check if connection has properties dictionary
+        if hasattr(connection, 'properties') and connection.properties:
+            # Use the properties dictionary
+            for key, value in connection.properties.items():
+                properties.append((key, str(value) if value is not None else ""))
+        else:
+            # Fallback to individual attributes if properties dict doesn't exist
+            if hasattr(connection, 'bandwidth'):
+                properties.append(("Bandwidth", connection.bandwidth if connection.bandwidth else ""))
+            if hasattr(connection, 'latency'):
+                properties.append(("Latency", connection.latency if connection.latency else ""))
+            if hasattr(connection, '_label_text'):
+                properties.append(("Label", connection._label_text if connection._label_text else ""))
+            properties.append(("Type", connection.connection_type if hasattr(connection, 'connection_type') else "ethernet"))
             
-            # Add property name
+            # Add source and target info
+            if hasattr(connection, 'source_device') and connection.source_device:
+                properties.append(("Source", connection.source_device.name))
+            if hasattr(connection, 'target_device') and connection.target_device:
+                properties.append(("Target", connection.target_device.name))
+        
+        # Add all properties to table
+        for i, (key, value) in enumerate(properties):
+            self.connection_props_table.insertRow(i)
             key_item = QTableWidgetItem(key)
             key_item.setFlags(key_item.flags() & ~Qt.ItemIsEditable)  # Make property name read-only
-            self.connection_props_table.setItem(row, 0, key_item)
-            
-            # Add property value
-            value_str = str(value) if value is not None else ""
-            self.connection_props_table.setItem(row, 1, QTableWidgetItem(value_str))
+            self.connection_props_table.setItem(i, 0, key_item)
+            self.connection_props_table.setItem(i, 1, QTableWidgetItem(str(value)))
         
         # Reconnect signal
         self.connection_props_table.cellChanged.connect(self._on_connection_property_changed)

@@ -124,6 +124,13 @@ class Connection(QGraphicsPathItem):
         self.bandwidth = "1G"  # Default bandwidth
         self.latency = "0ms"  # Default latency
         
+        # Add this properties dictionary for storing connection properties
+        self.properties = {
+            "Bandwidth": self.bandwidth,
+            "Latency": self.latency,
+            "Label": self._label_text
+        }
+        
         # Style properties
         self._line_width = 1  # Thinner visual lines
         self.line_width = 1

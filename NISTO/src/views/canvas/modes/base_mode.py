@@ -5,56 +5,83 @@ from PyQt5.QtWidgets import QGraphicsItem
 from models.device import Device
 
 class CanvasMode:
-    """Base class for canvas interaction modes using template method pattern."""
+    """Base class for canvas interaction modes."""
     
     def __init__(self, canvas):
+        """Initialize with a reference to the canvas."""
         self.canvas = canvas
-        # Add a name attribute for easier identification
+        # Add name attribute with default value based on class name
         self.name = self.__class__.__name__
-    
-    def handle_mouse_press(self, event, scene_pos, item):
-        """Template method for mouse press - override in subclasses."""
-        return False
-    
-    def mouse_press_event(self, event):
-        """Handle mouse press event with common logic."""
-        if event.button() == Qt.LeftButton:
-            scene_pos = self.canvas.mapToScene(event.pos())
-            item = self.canvas.scene().itemAt(scene_pos, self.canvas.transform())
-            if self.handle_mouse_press(event, scene_pos, item):
-                event.accept()
-                return True
-        return False
-    
-    def mouse_move_event(self, event):
-        """Handle mouse move event in this mode."""
-        return False
-    
-    def mouse_release_event(self, event, scene_pos=None, item=None):
-        """Handle mouse release event in this mode."""
-        return False
-    
-    def key_press_event(self, event):
-        """Handle key press event in this mode."""
-        return False
-    
-    def cursor(self):
-        """Return the cursor to use in this mode."""
-        return Qt.ArrowCursor
-    
+
     def activate(self):
-        """Called when this mode is activated."""
-        # By default, make devices non-draggable in every mode
-        self.set_devices_draggable(False)
-    
-    def deactivate(self):
-        """Called when this mode is deactivated."""
+        """Called when the mode is activated."""
         pass
+        
+    def deactivate(self):
+        """Called when the mode is deactivated."""
+        pass
+        
+    def handle_mouse_press(self, event, scene_pos, item):
+        """Handle mouse press event.
+        
+        Args:
+            event: The mouse event
+            scene_pos: The position in scene coordinates
+            item: The item under the cursor (if any)
+            
+        Returns:
+            bool: True if the event was handled, False to pass to default handler
+        """
+        return False
+        
+    def mouse_move_event(self, event):
+        """Handle mouse move event.
+        
+        Args:
+            event: The mouse event
+            
+        Returns:
+            bool: True if the event was handled, False to pass to default handler
+        """
+        return False
+        
+    def mouse_release_event(self, event, scene_pos=None, item=None):
+        """Handle mouse release event.
+        
+        Args:
+            event: The mouse event
+            scene_pos: The position in scene coordinates
+            item: The item under the cursor (if any)
+            
+        Returns:
+            bool: True if the event was handled, False to pass to default handler
+        """
+        return False
+        
+    def key_press_event(self, event):
+        """Handle key press event.
+        
+        Args:
+            event: The key event
+            
+        Returns:
+            bool: True if the event was handled, False to pass to default handler
+        """
+        return False
     
-    def set_devices_draggable(self, draggable):
-        """Helper to set draggability for all devices."""
-        for device in self.canvas.devices:
-            device.setFlag(QGraphicsItem.ItemIsMovable, draggable)
+    # Renamed to match what's called in mode_manager.py
+    def mouse_press_event(self, event, scene_pos=None, item=None):
+        """Handle mouse press event - compatibility method.
+        
+        This method exists to maintain compatibility with the mode_manager,
+        and delegates to handle_mouse_press.
+        """
+        return self.handle_mouse_press(event, scene_pos, item)
+        
+    def cursor(self):
+        """Return the cursor to use for this mode."""
+        from PyQt5.QtCore import Qt
+        return Qt.ArrowCursor
 
 
 class DeviceInteractionMode(CanvasMode):
@@ -72,4 +99,28 @@ class DeviceInteractionMode(CanvasMode):
         item = self.canvas.scene().itemAt(pos, self.canvas.transform())
         if self.is_device(item):
             return item
+        return None
+
+    def get_actual_device(self, item):
+        """
+        Get the device item from a potential child item.
+        
+        Args:
+            item: The item to check
+            
+        Returns:
+            The device if found, otherwise None
+        """
+        if not item:
+            return None
+            
+        # If it's already a device, return it
+        from models.device import Device
+        if isinstance(item, Device):
+            return item
+            
+        # Check if it's a child of a device
+        if item.parentItem() and isinstance(item.parentItem(), Device):
+            return item.parentItem()
+            
         return None

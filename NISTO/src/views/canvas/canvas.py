@@ -106,6 +106,20 @@ class Canvas(QGraphicsView):
         
         # Set viewport update mode to get smoother updates
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        
+        # Enhanced rubber band selection setup with stronger styling
+        self.setRubberBandSelectionMode(Qt.IntersectsItemShape)
+        self.setDragMode(QGraphicsView.RubberBandDrag)
+        
+        # Set a more visible rubber band style - use QSS that's guaranteed to work
+        self.setStyleSheet("""
+            QGraphicsView {
+                selection-background-color: rgba(0, 100, 255, 50);
+            }
+        """)
+        
+        # Variable to track if rubber band selection is active
+        self._rubber_band_active = False
     
     def _setup_modes(self):
         """Initialize all available interaction modes."""
@@ -163,39 +177,26 @@ class Canvas(QGraphicsView):
             scene_pos = self.mapToScene(event.pos())
             item = self.get_item_at(event.pos())
             
-            # Special handling for device selection and dragging
-            if event.button() == Qt.LeftButton:
-                # Check if this is a device or part of a device
-                device = None
+            # Special case for empty clicks in select mode
+            if not item and event.button() == Qt.LeftButton and self.mode_manager.current_mode == Modes.SELECT:
+                # Clear selection and prepare for rubber band
+                if not (event.modifiers() & Qt.ControlModifier):
+                    self.scene().clearSelection()
                 
-                # If item is directly a device
-                if item in self.devices:
-                    device = item
-                    
-                # If item is a child of a device
-                elif item and item.parentItem() and item.parentItem() in self.devices:
-                    device = item.parentItem()
-                    
-                if device and self.mode_manager.current_mode == Modes.SELECT:
-                    # Save starting position for undo/redo tracking
-                    self._drag_start_pos = device.scenePos()
-                    self._drag_item = device
-                    
-                    # Make sure the device is draggable
-                    device.setFlag(QGraphicsItem.ItemIsMovable, True)
-                    
-                    # Select the device if not already selected (or add to selection with Shift)
-                    if not device.isSelected() and not (event.modifiers() & Qt.ShiftModifier):
-                        self.scene().clearSelection()
-                    device.setSelected(True)
-                    
-                    # Let Qt handle the drag via standard event
-                    super().mousePressEvent(event)
-                    return
+                # Important: Use NoDrag first to reset any existing drag state
+                self.setDragMode(QGraphicsView.NoDrag)
+                # Now set rubber band mode
+                self.setDragMode(QGraphicsView.RubberBandDrag)
+                
+                # Let Qt handle the rubber band natively
+                super().mousePressEvent(event)
+                return
             
             # Let the mode manager handle the event
-            if not self.mode_manager.handle_event("mouse_press_event", event):
-                # If not handled, pass to default implementation
+            handled = self.mode_manager.handle_event("mouse_press_event", event, scene_pos, item)
+            
+            # If it wasn't handled by our mode, let Qt handle it for built-in rubber band selection
+            if not handled:
                 super().mousePressEvent(event)
                 
         except Exception as e:
@@ -236,6 +237,11 @@ class Canvas(QGraphicsView):
                 event.accept()
                 return
         
+        # Reset rubber band selection tracking
+        if hasattr(self, '_rubber_band_active') and self._rubber_band_active and event.button() == Qt.LeftButton:
+            self._rubber_band_active = False
+            self.logger.debug("Rubber band selection complete")
+        
         # Track item movements for undo/redo
         if hasattr(self, '_drag_start_pos') and hasattr(self, '_drag_item'):
             if self._drag_item and self._drag_start_pos:
@@ -264,6 +270,10 @@ class Canvas(QGraphicsView):
         handled = self.mode_manager.handle_event("mouse_release_event", event, scene_pos, item)
         if not handled:
             super().mouseReleaseEvent(event)
+        
+        # After mouse release, always ensure we're in rubber band drag mode if in select mode
+        if self.mode_manager.current_mode == Modes.SELECT:
+            self.setDragMode(QGraphicsView.RubberBandDrag)
         
         # After handling mouse release, emit selection changed signal
         self.selection_changed.emit(self.scene().selectedItems())

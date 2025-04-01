@@ -77,6 +77,9 @@ class PropertiesController:
             self.selected_item = selected_items[0]
             self.panel.display_item_properties(self.selected_item)
             
+            # Log selection details for debugging
+            self.logger.info(f"Selected item: {type(self.selected_item).__name__}")
+            
             # If a boundary is selected, find contained devices
             if isinstance(self.selected_item, Boundary):
                 contained_devices = self._get_devices_in_boundary(self.selected_item)
@@ -220,30 +223,26 @@ class PropertiesController:
                 # Notify via event bus
                 self.event_bus.emit("connection_style_changed", self.selected_item)
         
-        elif key == "Bandwidth":
-            try:
-                bandwidth = value if value else None
-                if hasattr(self.selected_item, 'bandwidth') and self.selected_item.bandwidth != bandwidth:
-                    self.selected_item.bandwidth = bandwidth
-                    self.event_bus.emit("connection_property_changed", self.selected_item, "bandwidth")
-            except Exception as e:
-                self.logger.warning(f"Error setting connection bandwidth: {str(e)}")
-        
-        elif key == "Latency":
-            try:
-                latency = value if value else None
-                if hasattr(self.selected_item, 'latency') and self.selected_item.latency != latency:
-                    self.selected_item.latency = latency
-                    self.event_bus.emit("connection_property_changed", self.selected_item, "latency")
-            except Exception as e:
-                self.logger.warning(f"Error setting connection latency: {str(e)}")
-        
-        elif key == "Label":
-            if hasattr(self.selected_item, 'label_text') and self.selected_item.label_text != value:
-                self.selected_item.label_text = value
-                if hasattr(self.selected_item, 'update_label'):
-                    self.selected_item.update_label()
-                self.event_bus.emit("connection_label_changed", self.selected_item)
+        # Handle standard properties that should be in the properties dictionary
+        elif key in ["Bandwidth", "Latency", "Label"]:
+            # Ensure properties dictionary exists
+            if not hasattr(self.selected_item, 'properties'):
+                self.selected_item.properties = {}
+                
+            # Update the value in the properties dictionary
+            old_value = self.selected_item.properties.get(key)
+            if old_value != value:
+                self.selected_item.properties[key] = value
+                
+                # Also update the corresponding attribute
+                if key == "Bandwidth":
+                    self.selected_item.bandwidth = value
+                elif key == "Latency":
+                    self.selected_item.latency = value
+                elif key == "Label":
+                    self.selected_item.label_text = value
+                    
+                self.event_bus.emit("connection_property_changed", self.selected_item, key)
     
     def _on_boundary_property_changed(self, key, value):
         """Handle boundary property change in properties panel."""

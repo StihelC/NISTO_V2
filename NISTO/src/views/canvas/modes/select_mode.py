@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QGraphicsItem
 from views.canvas.modes.base_mode import CanvasMode
 from models.boundary import Boundary
 from models.device import Device
+from models.connection import Connection
 
 class SelectMode(CanvasMode):
     """Mode for selecting and manipulating devices and boundaries."""
@@ -16,13 +17,20 @@ class SelectMode(CanvasMode):
         self.drag_started = False
         self.click_item = None
         self.drag_threshold = 5  # Minimum drag distance to consider it a drag
+        self.name = "Select Mode"  # Add explicit name for this mode
     
     def activate(self):
         """Enable dragging when select mode is active."""
         self.logger.debug("SelectMode: Activated")
         
-        # Set rubber band selection mode
+        # Clear any selection boxes that might be lingering
+        self.canvas.viewport().update()
+        
+        # Ensure we're in rubber band drag mode
         self.canvas.setDragMode(self.canvas.RubberBandDrag)
+        
+        # Make sure rubber band selection is visible and uses a larger selection area
+        self.canvas.setRubberBandSelectionMode(Qt.IntersectsItemShape)
         
         # Make all devices draggable and selectable
         for device in self.canvas.devices:
@@ -33,10 +41,15 @@ class SelectMode(CanvasMode):
             for child in device.childItems():
                 child.setFlag(QGraphicsItem.ItemIsMovable, True)
         
-        # Make all connections selectable
+        # Make all connections selectable and focusable
         for connection in self.canvas.connections:
             connection.setFlag(QGraphicsItem.ItemIsSelectable, True)
             connection.setFlag(QGraphicsItem.ItemIsFocusable, True)
+        
+        # Make all boundaries selectable
+        for boundary in self.canvas.boundaries:
+            boundary.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            boundary.setFlag(QGraphicsItem.ItemIsMovable, True)
     
     def deactivate(self):
         """Disable dragging when leaving select mode."""
@@ -62,37 +75,48 @@ class SelectMode(CanvasMode):
         
         # Handle left button press for potential drag or selection
         if event.button() == Qt.LeftButton:
-            # Find if we clicked on a device or part of a device
-            device = None
-            if isinstance(item, Device):
-                device = item
-            elif item and item.parentItem() and isinstance(item.parentItem(), Device):
-                device = item.parentItem()
+            # Log for debugging
+            self.logger.debug(f"Mouse press in select mode at {scene_pos.x()}, {scene_pos.y()}")
             
-            if device:
-                self.click_item = device
+            # Check if we clicked on a selectable item
+            selectable_item = None
+            
+            # Check for device or child of device
+            if isinstance(item, Device) or (item and item.parentItem() and isinstance(item.parentItem(), Device)):
+                selectable_item = item if isinstance(item, Device) else item.parentItem()
+                # ...existing code for device selection...
+            # Check for connection
+            elif isinstance(item, Connection):
+                selectable_item = item
+                # ...existing code for connection selection...
+            # Check for boundary
+            elif isinstance(item, Boundary):
+                selectable_item = item
+                # ...existing code for boundary selection...
+            
+            # If we found a selectable item
+            if selectable_item:
+                self.click_item = selectable_item
                 
                 # If Shift is not pressed, clear selection first
-                if not (event.modifiers() & Qt.ShiftModifier) and not device.isSelected():
+                if not (event.modifiers() & Qt.ShiftModifier) and not selectable_item.isSelected():
                     self.canvas.scene().clearSelection()
-                    
-                # Select the device
-                device.setSelected(True)
                 
-                # Switch to NoDrag mode for item dragging
-                self.canvas.setDragMode(self.canvas.NoDrag)
+                # Select the item
+                selectable_item.setSelected(True)
                 
-                # Return False to let Qt's default implementation handle the drag
-                return False
+                # Emit selection changed signal
+                self.canvas.selection_changed.emit(self.canvas.scene().selectedItems())
                 
+                # Only set NoDrag mode for devices (connections can't be dragged)
+                if isinstance(selectable_item, Device):
+                    self.canvas.setDragMode(self.canvas.NoDrag)
+                
+                return True  # Event handled
             else:
-                # Clicked on empty space - prepare for rubber band selection
-                if not (event.modifiers() & Qt.ShiftModifier):
-                    self.canvas.scene().clearSelection()
-                
-                # Make sure we're in rubber band mode
-                self.canvas.setDragMode(self.canvas.RubberBandDrag)
-                return True  # We'll handle this event
+                # Clicked on empty space - don't handle it here
+                # Let the Canvas class handle it directly for rubber band selection
+                return False
         
         return False
     
@@ -118,6 +142,7 @@ class SelectMode(CanvasMode):
                 else:
                     # Use rubber band mode for selection box
                     self.canvas.setDragMode(self.canvas.RubberBandDrag)
+                    self.logger.debug("Started rubber band selection")
             
             return True
         
@@ -137,7 +162,9 @@ class SelectMode(CanvasMode):
             self.click_item = None
             
             # Notify about selection changes
-            self.canvas.selection_changed.emit(self.canvas.scene().selectedItems())
+            selected_items = self.canvas.scene().selectedItems()
+            self.logger.debug(f"Selection complete: {len(selected_items)} items selected")
+            self.canvas.selection_changed.emit(selected_items)
             
             return True
         

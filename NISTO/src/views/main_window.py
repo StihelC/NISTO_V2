@@ -21,7 +21,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NISTO")
-        self.setGeometry(100, 100, 800, 600)
+        # Set a larger default size for when the window is restored)
+        self.setGeometry(100, 100, 1280, 800)
 
         # Setup logging
         logging.basicConfig(level=logging.INFO, 
@@ -88,6 +89,9 @@ class MainWindow(QMainWindow):
 
         # Initialize properties controller - defer its creation until command_manager is properly set in main.py
         self.properties_controller = None
+
+        # Add this line at the end of the __init__ method to maximize the window on startup
+        self.showMaximized()
 
     def setup_properties_controller(self):
         """Set up the properties controller after command_manager is initialized."""
