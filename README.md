@@ -2,18 +2,104 @@
 
 ## Overview
 
-NISTO is a PyQt-based application that allows users to create, configure, and manage device objects on a canvas. Users can add, select, move, and remove devices, create boundaries, and establish connections between devices. The application supports custom icons, device properties, and advanced interaction modes.
+NISTO is a PyQt-based network topology design and visualization application that allows users to create, configure, and manage network devices on an interactive canvas. Users can add, select, move, and delete devices, create boundaries, and establish connections between devices. The application supports custom icons, device properties, advanced alignment tools, and provides a complete solution for designing and documenting network topologies.
 
 ## Features
 
 - **Interactive Canvas**: A central area where devices, boundaries, and connections can be displayed and interacted with.
-- **Device Management**: Users can add new devices, configure their properties, and manipulate them on the canvas.
-- **Connection Management**: Create and manage connections between devices with customizable styles (straight, orthogonal, curved).
-- **Boundary Management**: Define and manage boundaries to group devices visually.
-- **Custom Configuration Dialogs**: Each device has an associated dialog for configuration, enhancing user experience.
-- **Serialization**: Save and load canvas states, including devices, connections, and boundaries.
-- **Custom Icons**: Support for uploading custom icons for devices.
-- **Debugging Tools**: Visualize device bounds and toggle connection points for debugging.
+- **Device Management**: Add, configure, move, and remove devices with custom properties.
+- **Connection Management**: Create connections between devices with multiple routing styles (straight, orthogonal, curved).
+- **Boundary Management**: Define visual boundaries to group related devices.
+- **Property Display**: Show device properties directly under the device icons on the canvas.
+- **Undo/Redo Support**: Complete history tracking for all operations.
+- **Clipboard Operations**: Cut, copy, and paste devices and connections.
+- **Alignment Tools**: Multiple alignment options including grid, circle, and custom topology arrangements.
+- **Custom Configuration**: Each device type has associated properties that can be customized.
+- **Serialization**: Save and load canvas states including devices, connections, boundaries, and their properties.
+- **Custom Icons**: Support for uploading custom device icons.
+- **Z-Order Management**: Control the visual layering of elements.
+- **Bulk Operations**: Add or edit multiple devices at once.
+- **Zoom and Pan**: Navigate large topologies with zoom in/out and canvas panning.
+
+## Architecture
+
+NISTO follows a Model-View-Controller (MVC) architecture:
+
+- **Models**: Define the data structures for devices, connections, and boundaries
+- **Views**: Handle the user interface elements including the canvas, toolbars, and property panels
+- **Controllers**: Manage interaction between models and views, handle user input, and maintain application state
+
+## Key Components
+
+### Canvas
+
+The central workspace where the network topology is displayed and manipulated. The canvas supports:
+
+- Multiple interaction modes (select, add, delete)
+- Zooming and panning
+- Rubber-band selection
+- Context menus
+
+### Device Management
+
+Devices are the core elements in network topologies. The application provides:
+
+- Multiple device types (routers, switches, firewalls, etc.)
+- Custom device icons
+- Property editing
+- Visual property display under device icons
+
+### Connection Management
+
+Connections represent links between devices:
+
+- Multiple routing styles (straight lines, orthogonal routes, curves)
+- Connection properties (bandwidth, latency, etc.)
+- Visual connection points
+
+### Boundary Management
+
+Boundaries help organize devices into logical groups:
+
+- Resizable boundary regions
+- Custom names and colors
+- Devices can be listed by boundary
+
+### Properties Panel
+
+A dynamic properties panel allows editing:
+
+- General properties (name, z-index)
+- Device-specific properties
+- Connection properties
+- Boundary properties
+- Toggle which properties to display on the canvas
+
+### Alignment Tools
+
+Advanced alignment capabilities include:
+
+- Basic alignment (left, right, top, bottom, center)
+- Distribution (horizontal, vertical)
+- Arrangement in patterns (grid, circle)
+- Network topologies (bus, star, etc.)
+- Orthogonal layout optimization
+
+## Technical Details
+
+- **Framework**: Built with PyQt5
+- **Graphics**: Uses QGraphicsScene and QGraphicsView for rendering
+- **Event System**: Custom event bus for component communication
+- **Command Pattern**: For undo/redo functionality
+- **Signal-Slot**: For UI updates and event handling
+
+## Future Enhancements
+
+- Network simulation capabilities
+- IP addressing and subnet visualization
+- Configuration generation for network devices
+- Integration with external network tools
+- Collaboration features
 
 ## Project Structure
 
@@ -95,37 +181,6 @@ To run the application, execute the following command:
 ```bash
 python src/main.py
 ```
-
-## Key Features
-
-### Device Management
-
-- Add devices with predefined types (Router, Switch, Firewall, Server, etc.).
-- Configure device properties such as name, IP address, and description.
-- Upload custom icons for devices.
-
-### Connection Management
-
-- Create connections between devices with customizable styles:
-  - Straight lines
-  - Orthogonal (right-angle) lines
-  - Curved lines
-- Edit connection labels and properties.
-
-### Boundary Management
-
-- Define boundaries to group devices visually.
-- Customize boundary names and colors.
-
-### Serialization
-
-- Save the current canvas state to a `.canvas` or `.json` file.
-- Load a saved canvas state to restore devices, connections, and boundaries.
-
-### Debugging Tools
-
-- Visualize device bounds for debugging.
-- Toggle connection points visibility.
 
 ## Contributing
 

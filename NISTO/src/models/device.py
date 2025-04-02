@@ -129,13 +129,7 @@ class Device(QGraphicsPixmapItem):
         # Initialize display properties dictionary
         self.display_properties = {}
         
-        # Create text item for the name
-        self.text_item = QGraphicsTextItem(self)
-        self.text_item.setPlainText(self.name)
-        self.text_item.setPos(self.pixmap().width()/2 - self.text_item.boundingRect().width()/2, 
-                             self.pixmap().height())
-        
-        # Create text items for displaying properties
+        # Create property labels
         self.property_labels = {}
     
     def _init_properties(self, custom_properties=None):
@@ -162,8 +156,10 @@ class Device(QGraphicsPixmapItem):
         self.rect_item.setBrush(brush)
         self.rect_item.setPen(QPen(Qt.black, 1))
         
-        # Add text for the device name
-        self.text_item = QGraphicsTextItem(self.name, self)
+        # Create text item for the name
+        self.text_item = QGraphicsTextItem(self)
+        self.text_item.setPlainText(self.name)
+        
         # Center the text
         text_width = self.text_item.boundingRect().width()
         text_x = (self.width - text_width) / 2
@@ -716,7 +712,8 @@ class Device(QGraphicsPixmapItem):
         # Create new labels for selected properties
         for i, (prop, value) in enumerate(display_props):
             label = QGraphicsTextItem(self)
-            label.setPlainText(f"{prop}: {value}")
+            # Show only the value without the property name
+            label.setPlainText(f"{value}")
             label.setFont(QFont("Arial", 8))
             
             # Center the label horizontally

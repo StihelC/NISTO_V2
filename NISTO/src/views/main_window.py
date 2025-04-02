@@ -1,15 +1,18 @@
-from PyQt5.QtWidgets import QMainWindow, QDialog, QMessageBox, QAction, QDockWidget
+from PyQt5.QtWidgets import QMainWindow, QDialog, QMessageBox, QAction, QDockWidget, QMenu
 from PyQt5.QtCore import QPointF, QTimer, Qt
-from PyQt5.QtGui import QColor  # Removed QKeySequence import as it's not used
+from PyQt5.QtGui import QColor, QIcon
 import logging
+import os
 
-from views.canvas.canvas import Canvas  # Updated import path
+from views.canvas.canvas import Canvas
 from constants import Modes
 from controllers.menu_manager import MenuManager
 from controllers.device_controller import DeviceController
 from controllers.connection_controller import ConnectionController
 from controllers.boundary_controller import BoundaryController
 from controllers.clipboard_manager import ClipboardManager
+from controllers.bulk_device_controller import BulkDeviceController
+from controllers.bulk_property_controller import BulkPropertyController
 from utils.event_bus import EventBus
 from models.device import Device
 from models.connection import Connection
@@ -24,7 +27,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NISTO")
-        # Set a larger default size for when the window is restored)
+        # Set a larger default size for when the window is restored
         self.setGeometry(100, 100, 1280, 800)
 
         # Setup logging
@@ -33,7 +36,7 @@ class MainWindow(QMainWindow):
         self.logger = logging.getLogger(__name__)
 
         # Create canvas
-        self.canvas = Canvas(self)  # This now uses the canvas from the canvas folder
+        self.canvas = Canvas(self)
         self.setCentralWidget(self.canvas)
         
         # Create status bar
@@ -46,6 +49,32 @@ class MainWindow(QMainWindow):
         self.event_bus = EventBus()
         
         # Initialize controllers
+        self._init_controllers()
+        
+        # Create menu manager and toolbar
+        self.menu_manager = MenuManager(self, self.canvas, self.event_bus)
+        self.menu_manager.create_toolbar()
+        
+        # Initialize command_manager with a None value to avoid attribute errors
+        self.command_manager = None
+        
+        # Create UI components
+        self._create_ui_components()
+        
+        # Connect signals
+        self.connect_signals()
+        
+        # Set initial mode
+        self.set_mode(Modes.SELECT)
+        
+        # Register event handlers
+        self._register_event_handlers()
+        
+        # Add this line at the end of the __init__ method to maximize the window on startup
+        self.showMaximized()
+
+    def _init_controllers(self):
+        """Initialize controllers for device, connection, and boundary management."""
         self.device_controller = DeviceController(self.canvas, self.event_bus)
         self.connection_controller = ConnectionController(self.canvas, self.event_bus)
         self.boundary_controller = BoundaryController(self.canvas, self.event_bus)
@@ -58,31 +87,20 @@ class MainWindow(QMainWindow):
             self.event_bus
         )
         
-        # Create menu manager
-        self.menu_manager = MenuManager(self, self.canvas, self.event_bus)
-        self.menu_manager.create_toolbar()
-        
-        # Initialize command_manager with a None value to avoid attribute errors
-        self.command_manager = None
-        
-        # Create file menu with save/load actions
+        # Initialize bulk controllers - these will be fully set up after command_manager is initialized
+        self.bulk_device_controller = None
+        self.bulk_property_controller = None
+
+    def _create_ui_components(self):
+        """Create UI components like menus, panels, and toolbars."""
+        # Create menus
         self._create_file_menu()
-        
-        # Don't create edit menu here - it will be created in main.py after command_manager is set
-        # self._create_edit_menu()  <-- Comment out or remove this line
-        
-        # Create view menu
         self._create_view_menu()
+        self._create_device_menu()  # New menu for device operations
         
         # Set up keyboard shortcuts
         self._setup_shortcuts()
         
-        # Connect canvas signals to controllers
-        self.connect_signals()
-        
-        # Set initial mode
-        self.set_mode(Modes.SELECT)
-
         # Create properties panel
         self.properties_panel = PropertiesPanel(self)
         self.right_panel = QDockWidget("Properties", self)
@@ -93,11 +111,60 @@ class MainWindow(QMainWindow):
         # Initialize properties controller - defer its creation until command_manager is properly set in main.py
         self.properties_controller = None
 
-        # Add this line at the end of the __init__ method to maximize the window on startup
-        self.showMaximized()
-
         # Setup alignment tools
         self.setup_alignment_tools()
+
+    def _create_device_menu(self):
+        """Create a dedicated device menu for device operations."""
+        device_menu = self.menuBar().addMenu("&Devices")
+        
+        # Add device action
+        add_device_action = QAction("&Add Device...", self)
+        add_device_action.setStatusTip("Add a new device to the canvas")
+        add_device_action.triggered.connect(lambda: self._on_add_device_requested())
+        device_menu.addAction(add_device_action)
+        
+        # Bulk add action
+        bulk_add_action = QAction("Add &Multiple Devices...", self)
+        bulk_add_action.setStatusTip("Add multiple different devices in bulk")
+        bulk_add_action.triggered.connect(self._on_bulk_add_device_requested)
+        device_menu.addAction(bulk_add_action)
+        
+        device_menu.addSeparator()
+        
+        # Bulk edit action
+        bulk_edit_action = QAction("&Edit Selected Devices...", self)
+        bulk_edit_action.setStatusTip("Edit properties of multiple selected devices")
+        bulk_edit_action.triggered.connect(self._on_edit_selected_devices)
+        device_menu.addAction(bulk_edit_action)
+        
+        # Device import/export submenu
+        export_menu = QMenu("&Export", self)
+        export_menu.addAction("Export Selected Devices as CSV...")
+        export_menu.addAction("Export All Devices as CSV...")
+        device_menu.addMenu(export_menu)
+        
+        import_action = QAction("&Import Devices from CSV...", self)
+        device_menu.addAction(import_action)
+
+    def _register_event_handlers(self):
+        """Register event handlers with the event bus."""
+        if self.event_bus:
+            # Device property events
+            self.event_bus.on('device_property_changed', self._on_device_property_changed)
+            self.event_bus.on('device_display_properties_changed', self._on_device_display_properties_changed)
+            
+            # Device modification events
+            self.event_bus.on('device_added', self._on_device_added)
+            self.event_bus.on('device_removed', self._on_device_removed)
+            
+            # Connection events
+            self.event_bus.on('connection_added', self._on_connection_added)
+            self.event_bus.on('connection_removed', self._on_connection_removed)
+            
+            # Bulk operation events
+            self.event_bus.on('bulk_devices_added', self._on_bulk_devices_added)
+            self.event_bus.on('bulk_properties_changed', self._on_bulk_properties_changed)
 
     def setup_properties_controller(self):
         """Set up the properties controller after command_manager is initialized."""
@@ -105,6 +172,23 @@ class MainWindow(QMainWindow):
             self.properties_controller = PropertiesController(
                 self.canvas,
                 self.properties_panel,
+                self.event_bus,
+                self.command_manager.undo_redo_manager if self.command_manager else None
+            )
+        
+        # Set up bulk controllers now that command_manager is available
+        if self.bulk_device_controller is None:
+            self.bulk_device_controller = BulkDeviceController(
+                self.canvas,
+                self.device_controller,
+                self.event_bus,
+                self.command_manager.undo_redo_manager if self.command_manager else None
+            )
+        
+        if self.bulk_property_controller is None:
+            self.bulk_property_controller = BulkPropertyController(
+                self.canvas,
+                self.device_controller,
                 self.event_bus,
                 self.command_manager.undo_redo_manager if self.command_manager else None
             )
@@ -125,10 +209,39 @@ class MainWindow(QMainWindow):
         # Connect selection changed signal to update toolbar state
         self.canvas.selection_changed.connect(self.alignment_toolbar.update_actions_state)
         
-        # Connect alignment signals - use the correct method for your EventBus implementation
+        # Connect alignment signals
         if self.event_bus:
-            # Use on() method instead of subscribe() or register()
             self.event_bus.on('devices.aligned', self.on_devices_aligned)
+
+    # Event handler methods
+    def _on_device_property_changed(self, device, property_name):
+        """Handle device property change events."""
+        # If the property is being displayed, update the label
+        if hasattr(device, 'display_properties') and property_name in device.display_properties:
+            if device.display_properties[property_name]:
+                device.update_property_labels()
+
+    def _on_device_display_properties_changed(self, device):
+        """Handle changes to which properties are displayed under devices."""
+        device.update_property_labels()
+        
+    def _on_device_added(self, device):
+        """Handle device added event."""
+        self.statusBar().showMessage(f"Added device: {device.name}", 3000)
+        
+    def _on_device_removed(self, device):
+        """Handle device removed event."""
+        self.statusBar().showMessage(f"Removed device: {device.name}", 3000)
+        
+    def _on_connection_added(self, connection):
+        """Handle connection added event."""
+        source = connection.source_device.name if hasattr(connection, 'source_device') else "unknown"
+        target = connection.target_device.name if hasattr(connection, 'target_device') else "unknown"
+        self.statusBar().showMessage(f"Added connection: {source} to {target}", 3000)
+        
+    def _on_connection_removed(self, connection):
+        """Handle connection removed event."""
+        self.statusBar().showMessage("Connection removed", 3000)
 
     def on_devices_aligned(self, devices, original_positions, alignment_type):
         """Handle device alignment for undo/redo support."""
@@ -145,6 +258,36 @@ class MainWindow(QMainWindow):
             self.command_manager.undo_redo_manager.push_command(command)
             
             self.logger.debug(f"Added alignment command to undo stack: {alignment_type}")
+            self.statusBar().showMessage(f"Aligned {len(devices)} devices: {alignment_type}", 3000)
+
+    def _on_bulk_devices_added(self, count):
+        """Handle bulk device addition event."""
+        self.statusBar().showMessage(f"Added {count} devices in bulk", 3000)
+    
+    def _on_bulk_properties_changed(self, devices):
+        """Handle bulk property change event."""
+        self.statusBar().showMessage(f"Updated properties for {len(devices)} devices", 3000)
+        
+    def _on_add_device_requested(self):
+        """Show dialog to add a device at center of view."""
+        view_center = self.canvas.mapToScene(self.canvas.viewport().rect().center())
+        self.device_controller.on_add_device_requested(view_center)
+    
+    def _on_bulk_add_device_requested(self):
+        """Show dialog to add multiple devices in bulk."""
+        if self.bulk_device_controller:
+            # Get the center of the current view as default position
+            view_center = self.canvas.mapToScene(self.canvas.viewport().rect().center())
+            self.bulk_device_controller.show_bulk_add_dialog(view_center)
+        else:
+            self.logger.error("Bulk device controller not initialized")
+    
+    def _on_edit_selected_devices(self):
+        """Show dialog to edit properties of selected devices."""
+        if self.bulk_property_controller:
+            self.bulk_property_controller.edit_selected_devices()
+        else:
+            self.logger.error("Bulk property controller not initialized")
 
     def _create_file_menu(self):
         """Create the File menu with save/load actions."""

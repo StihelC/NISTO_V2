@@ -443,3 +443,57 @@ class Canvas(QGraphicsView):
             
         # Emit signal for controller to handle
         self.align_devices_requested.emit(alignment_type, selected_devices)
+    
+    def contextMenuEvent(self, event):
+        """Handle context menu event."""
+        menu = QMenu(self)
+        
+        # Get scene position for potential device/connection creation
+        scene_pos = self.mapToScene(event.pos())
+        item = self.scene().itemAt(scene_pos, self.transform())
+        
+        # Check if any devices are selected
+        selected_devices = [item for item in self.scene().selectedItems() if item in self.devices]
+        
+        # Different context menu based on what's under the cursor
+        if not item:
+            # Empty canvas area menu
+            add_device_action = menu.addAction("Add Device...")
+            add_device_action.triggered.connect(lambda: self.add_device_requested.emit(scene_pos))
+            
+            bulk_add_action = menu.addAction("Add Multiple Devices...")
+            # Find the main window and call its bulk add method
+            bulk_add_action.triggered.connect(self._request_bulk_add)
+            
+            # Add more empty canvas actions here...
+            
+        elif item in self.devices:
+            # Device-specific menu options
+            if len(selected_devices) > 1:
+                # If multiple devices are selected, offer bulk edit
+                bulk_edit_action = menu.addAction(f"Edit {len(selected_devices)} Devices...")
+                bulk_edit_action.triggered.connect(self._request_bulk_edit)
+            
+            # ...existing device menu options...
+        
+        # Add bulk edit option if multiple devices are selected, regardless of what was clicked
+        elif len(selected_devices) > 1:
+            bulk_edit_action = menu.addAction(f"Edit {len(selected_devices)} Devices...")
+            bulk_edit_action.triggered.connect(self._request_bulk_edit)
+            
+        # Execute the menu
+        menu.exec_(event.globalPos())
+    
+    def _request_bulk_add(self):
+        """Request bulk device addition through main window."""
+        # Find the main window through parent hierarchy
+        main_window = self.window()
+        if hasattr(main_window, '_on_bulk_add_device_requested'):
+            main_window._on_bulk_add_device_requested()
+    
+    def _request_bulk_edit(self):
+        """Request bulk property editing through main window."""
+        # Find the main window through parent hierarchy
+        main_window = self.window()
+        if hasattr(main_window, '_on_edit_selected_devices'):
+            main_window._on_edit_selected_devices()
