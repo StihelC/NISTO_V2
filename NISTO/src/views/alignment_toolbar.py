@@ -48,6 +48,7 @@ class AlignmentToolbar(QToolBar):
         self.optimize_ortho_action = QAction(QIcon("resources/icons/optimize_ortho.png"), "Optimize Orthogonal Connections", self)
         self.bus_topology_action = QAction(QIcon("resources/icons/bus_topology.png"), "Bus Topology", self)
         self.star_topology_action = QAction(QIcon("resources/icons/star_topology.png"), "Star Topology", self)
+        self.optimize_distances_action = QAction(QIcon("resources/icons/optimize_distances.png"), "Minimize Connection Distances", self)
         
         # Create basic alignment submenu
         basic_align_menu = QMenu("Basic Alignment", self)
@@ -75,6 +76,7 @@ class AlignmentToolbar(QToolBar):
         topology_menu = QMenu("Network Topologies", self)
         topology_menu.addAction(self.ortho_layers_action)
         topology_menu.addAction(self.optimize_ortho_action)
+        topology_menu.addAction(self.optimize_distances_action)
         topology_menu.addAction(self.bus_topology_action)
         topology_menu.addAction(self.star_topology_action)
         
@@ -116,6 +118,7 @@ class AlignmentToolbar(QToolBar):
         self.optimize_ortho_action.triggered.connect(self._on_optimize_ortho)
         self.bus_topology_action.triggered.connect(self._on_bus_topology)
         self.star_topology_action.triggered.connect(self._on_star_topology)
+        self.optimize_distances_action.triggered.connect(self._on_optimize_distances)
         
         # Initially disable all actions until selection changes
         self.update_actions_state()
@@ -162,6 +165,7 @@ class AlignmentToolbar(QToolBar):
         self.optimize_ortho_action.setEnabled(device_count >= 3)
         self.bus_topology_action.setEnabled(device_count >= 3)
         self.star_topology_action.setEnabled(device_count >= 3)
+        self.optimize_distances_action.setEnabled(device_count >= 3)
     
     # Connect existing alignment functions
     def _on_align_left(self):
@@ -229,3 +233,7 @@ class AlignmentToolbar(QToolBar):
     def _on_star_topology(self):
         if self.alignment_controller:
             self.alignment_controller.arrange_star_topology()
+    
+    def _on_optimize_distances(self):
+        if self.alignment_controller:
+            self.alignment_controller.optimize_connection_distances()

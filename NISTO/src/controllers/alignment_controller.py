@@ -889,3 +889,135 @@ class AlignmentController(QObject):
         
         self.canvas.viewport().update()
         return True
+
+    def optimize_connection_distances(self):
+        """Arrange devices to minimize total connection length using force-directed layout."""
+        devices = self.get_selected_devices()
+        if len(devices) < 3:
+            return False
+            
+        # Store original positions for undo
+        original_positions = {device: device.scenePos() for device in devices}
+        
+        # Find all connections between selected devices
+        connections = []
+        device_set = set(devices)
+        
+        for device in devices:
+            for connection in getattr(device, 'connections', []):
+                source = connection.source_device
+                target = connection.target_device
+                if source in device_set and target in device_set and source != target:
+                    connections.append((source, target, connection))
+        
+        # If no connections found, fall back to grid arrangement
+        if not connections:
+            self.arrange_in_grid()
+            return True
+        
+        # Use force-directed algorithm to find optimal positions
+        # This is a simplified implementation of the Fruchterman-Reingold algorithm
+        
+        # Configuration
+        iterations = 50          # Number of iterations for layout algorithm
+        cooling_factor = 0.95    # Temperature reduction per iteration
+        repulsive_force = 20000  # Strength of repulsive force between devices
+        attractive_force = 0.2   # Strength of attractive force for connections
+        
+        # Initial temperature (maximum movement per iteration)
+        temperature = max(
+            max(d.scenePos().x() for d in devices) - min(d.scenePos().x() for d in devices),
+            max(d.scenePos().y() for d in devices) - min(d.scenePos().y() for d in devices)
+        ) / 10
+        
+        # Current positions (will be modified during optimization)
+        positions = {device: QPointF(device.scenePos()) for device in devices}
+        
+        # Run the force-directed layout algorithm
+        for iteration in range(iterations):
+            # Calculate repulsive forces between all devices
+            forces = {device: QPointF(0, 0) for device in devices}
+            
+            # Apply repulsive forces between all pairs of devices
+            for i, device1 in enumerate(devices):
+                for device2 in devices[i+1:]:
+                    # Get displacement vector between devices
+                    dx = positions[device1].x() - positions[device2].x()
+                    dy = positions[device1].y() - positions[device2].y()
+                    
+                    # Avoid division by zero
+                    distance = max(0.1, (dx*dx + dy*dy)**0.5)
+                    
+                    # Calculate repulsive force (inversely proportional to distance)
+                    force = repulsive_force / (distance * distance)
+                    
+                    # Normalize direction
+                    force_x = (dx / distance) * force
+                    force_y = (dy / distance) * force
+                    
+                    # Apply force to both devices in opposite directions
+                    forces[device1] += QPointF(force_x, force_y)
+                    forces[device2] += QPointF(-force_x, -force_y)
+            
+            # Apply attractive forces for connected devices
+            for source, target, _ in connections:
+                # Get displacement vector between connected devices
+                dx = positions[source].x() - positions[target].x()
+                dy = positions[source].y() - positions[target].y()
+                
+                # Distance between devices
+                distance = max(0.1, (dx*dx + dy*dy)**0.5)
+                
+                # Calculate attractive force (proportional to distance)
+                force = attractive_force * distance
+                
+                # Normalize direction
+                force_x = (dx / distance) * force
+                force_y = (dy / distance) * force
+                
+                # Apply force to both devices (pull them together)
+                forces[source] -= QPointF(force_x, force_y)
+                forces[target] += QPointF(force_x, force_y)
+            
+            # Apply forces with temperature limiting
+            for device in devices:
+                # Calculate force magnitude
+                force = forces[device]
+                force_mag = (force.x()**2 + force.y()**2)**0.5
+                
+                if force_mag > 0:
+                    # Limit force to current temperature
+                    movement = min(force_mag, temperature) / force_mag
+                    
+                    # Update position based on force
+                    positions[device] += QPointF(force.x() * movement, force.y() * movement)
+            
+            # Cool down the system
+            temperature *= cooling_factor
+        
+        # Normalize positions to keep the center of mass unchanged
+        original_center_x = sum(device.scenePos().x() + device.width/2 for device in devices) / len(devices)
+        original_center_y = sum(device.scenePos().y() + device.height/2 for device in devices) / len(devices)
+        
+        new_center_x = sum(pos.x() + device.width/2 for device, pos in positions.items()) / len(devices)
+        new_center_y = sum(pos.y() + device.height/2 for device, pos in positions.items()) / len(devices)
+        
+        dx = original_center_x - new_center_x
+        dy = original_center_y - new_center_y
+        
+        # Apply final positions to devices
+        for device, pos in positions.items():
+            final_pos = QPointF(pos.x() + dx, pos.y() + dy)
+            device.setPos(final_pos)
+            device.update_connections()
+        
+        # Notify about the move for undo tracking
+        if self.event_bus:
+            self.event_bus.emit('devices.aligned', 
+                devices=devices,
+                original_positions=original_positions,
+                alignment_type='optimize_connections'
+            )
+        
+        self.canvas.viewport().update()
+        return True
