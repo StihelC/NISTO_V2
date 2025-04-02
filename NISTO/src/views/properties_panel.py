@@ -104,20 +104,9 @@ class PropertiesPanel(QWidget):
         display_layout = QVBoxLayout(display_group)
         self.display_checkboxes = {}
         
-        # Label for display options
+        # We'll populate these checkboxes dynamically when a device is selected
         display_layout.addWidget(QLabel("Show properties under icon:"))
         
-        # Create a scrollable area for checkboxes when there are many properties
-        checkbox_scroll = QScrollArea()
-        checkbox_scroll.setWidgetResizable(True)
-        checkbox_scroll.setFrameShape(QScrollArea.NoFrame)
-        checkbox_content = QWidget()
-        checkbox_layout = QVBoxLayout(checkbox_content)
-        checkbox_layout.setContentsMargins(0, 0, 0, 0)
-        checkbox_scroll.setWidget(checkbox_content)
-        self.checkbox_layout = checkbox_layout  # Store for later use
-        
-        display_layout.addWidget(checkbox_scroll)
         layout.addRow(display_group)
         
         # Custom properties table
@@ -241,11 +230,13 @@ class PropertiesPanel(QWidget):
             checkbox.setParent(None)
         self.display_checkboxes.clear()
         
-        # Clear the checkbox layout
-        while self.checkbox_layout.count():
-            item = self.checkbox_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        # Find the display group within the device group
+        display_group = None
+        for i in range(self.device_group.layout().count()):
+            item = self.device_group.layout().itemAt(i)
+            if item.widget() and isinstance(item.widget(), QGroupBox) and item.widget().title() == "Display Options":
+                display_group = item.widget()
+                break
         
         if hasattr(device, 'properties'):
             row = 0
@@ -265,18 +256,15 @@ class PropertiesPanel(QWidget):
                 value_str = str(value) if not isinstance(value, str) else value
                 self.device_props_table.setItem(row, 1, QTableWidgetItem(value_str))
                 
-                # Create display option checkbox - show the property name
-                checkbox = QCheckBox(key)
-                is_displayed = False
-                if hasattr(device, 'display_properties') and key in device.display_properties:
-                    is_displayed = device.display_properties[key]
-                checkbox.setChecked(is_displayed)
-                
-                # Connect with lambda capturing the current key
-                checkbox.toggled.connect(lambda checked, k=key: self.property_display_toggled.emit(k, checked))
-                
-                self.display_checkboxes[key] = checkbox
-                self.checkbox_layout.addWidget(checkbox)
+                # Create display option checkbox
+                if display_group:
+                    checkbox = QCheckBox(key)
+                    # Set checked status based on device's display_properties
+                    if hasattr(device, 'display_properties') and key in device.display_properties:
+                        checkbox.setChecked(device.display_properties[key])
+                    checkbox.toggled.connect(lambda checked, k=key: self.property_display_toggled.emit(k, checked))
+                    self.display_checkboxes[key] = checkbox
+                    display_group.layout().addWidget(checkbox)
                 
                 row += 1
         
