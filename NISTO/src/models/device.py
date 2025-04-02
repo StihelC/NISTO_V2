@@ -108,12 +108,6 @@ class Device(QGraphicsPixmapItem):
         self.text_item = None
         self.icon_item = None
         
-        # Initialize display properties dictionary
-        self.display_properties = {}
-        
-        # Create property labels dictionary
-        self.property_labels = {}
-        
         # Create child items
         self._create_visuals()
         
@@ -131,6 +125,18 @@ class Device(QGraphicsPixmapItem):
             child.setFlag(QGraphicsItem.ItemIsSelectable, False)
             child.setFlag(QGraphicsItem.ItemIsMovable, False)
             child.setAcceptedMouseButtons(Qt.NoButton)
+        
+        # Initialize display properties dictionary
+        self.display_properties = {}
+        
+        # Create text item for the name
+        self.text_item = QGraphicsTextItem(self)
+        self.text_item.setPlainText(self.name)
+        self.text_item.setPos(self.pixmap().width()/2 - self.text_item.boundingRect().width()/2, 
+                             self.pixmap().height())
+        
+        # Create text items for displaying properties
+        self.property_labels = {}
     
     def _init_properties(self, custom_properties=None):
         """Initialize the device properties based on type and custom values."""
@@ -569,9 +575,9 @@ class Device(QGraphicsPixmapItem):
                 text_width = child.boundingRect().width()
                 text_x = (self.width - text_width) / 2
                 child.setPos(text_x, self.height + 5)
-        
-        # Update property labels positions as they may have been affected
-        self._update_property_label_positions()
+            # All other children should be at 0,0 relative to device
+            elif child.pos() != QPointF(0, 0):
+                child.setPos(QPointF(0, 0))
         
         # Emit signal that device has moved
         if hasattr(self, 'signals'):
@@ -579,27 +585,6 @@ class Device(QGraphicsPixmapItem):
         
         # Update connections
         self.update_connections()
-
-    def _update_property_label_positions(self):
-        """Update the position of property labels to keep them properly aligned."""
-        if not self.property_labels:
-            return
-            
-        # Calculate the correct starting position below the device name
-        name_bottom = self.height + self.text_item.boundingRect().height() + 5
-        
-        # Reposition each property label
-        i = 0
-        for prop, label in self.property_labels.items():
-            # Center the label horizontally
-            x_pos = (self.width - label.boundingRect().width()) / 2
-            
-            # Position each property below the name with spacing
-            y_pos = name_bottom + (i * (label.boundingRect().height() + 2))
-            
-            # Update position
-            label.setPos(x_pos, y_pos)
-            i += 1
 
     def update_connections(self):
         """Update all connections attached to this device."""
@@ -724,30 +709,22 @@ class Device(QGraphicsPixmapItem):
         if not display_props:
             return
         
-        # Calculate the correct starting position
-        # It should be right below the device name text
+        # Start positioning from the bottom of the device plus the name label height
+        # First, calculate where the name text ends
         name_bottom = self.height + self.text_item.boundingRect().height() + 5
         
         # Create new labels for selected properties
         for i, (prop, value) in enumerate(display_props):
             label = QGraphicsTextItem(self)
-            # Only show the value, not the property name
-            label.setPlainText(value)
+            label.setPlainText(f"{prop}: {value}")
             label.setFont(QFont("Arial", 8))
             
             # Center the label horizontally
             x_pos = (self.width - label.boundingRect().width()) / 2
             
-            # Position each property below the name with spacing
+            # Position each property below the name, with spacing between properties
+            # Add additional offset to ensure it's below both the device and name
             y_pos = name_bottom + (i * (label.boundingRect().height() + 2))
             
-            # Position the label
             label.setPos(x_pos, y_pos)
             self.property_labels[prop] = label
-            
-            # Set high Z value to ensure visibility
-            label.setZValue(5)
-        
-        # Force a scene update if we're in a scene
-        if self.scene():
-            self.scene().update(self.sceneBoundingRect().adjusted(-5, -5, 5, 5))

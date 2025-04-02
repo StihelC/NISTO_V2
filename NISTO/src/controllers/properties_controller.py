@@ -177,15 +177,6 @@ class PropertiesController:
                 self.logger.info(f"Changing device property '{key}' from '{old_value}' to '{value}'")
                 self.selected_item.properties[key] = value
                 
-                # We don't need to update the checkbox text since it now shows the property name
-                # instead of the value
-                
-                # If this property is displayed under the icon, update it
-                if (hasattr(self.selected_item, 'display_properties') and 
-                    key in self.selected_item.display_properties and 
-                    self.selected_item.display_properties[key]):
-                    self.selected_item.update_property_labels()
-                
                 # Notify via event bus
                 self.event_bus.emit("device_property_changed", self.selected_item, key)
     
