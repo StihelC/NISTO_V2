@@ -271,124 +271,34 @@ class MoveItemCommand(Command):
 
 
 class CompositeCommand(Command):
-    """A command that consists of multiple sub-commands."""
+    """A command that groups multiple commands together."""
     
-    def __init__(self, commands=None, description="Multiple Actions"):
+    def __init__(self, commands=None, description="Composite Command"):
         super().__init__(description)
         self.commands = commands or []
         self.logger = logging.getLogger(__name__)
-        self.completed_commands = []  # Track successfully executed commands
-        self.undo_redo_manager = None  # Will be set from outside
-        self._device_commands = []  # Track device commands specifically
-    
+        
     def add_command(self, command):
         """Add a command to the composite."""
-        # Pass our undo_redo_manager to the command if we have one
-        if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
-            if not hasattr(command, 'undo_redo_manager') or command.undo_redo_manager is None:
-                command.undo_redo_manager = self.undo_redo_manager
-        
         self.commands.append(command)
-        self.logger.debug(f"COMPOSITE: Added command {command.__class__.__name__}, total={len(self.commands)}")
-    
+        
     def execute(self):
-        """Execute all sub-commands."""
-        self.logger.debug(f"COMPOSITE: Executing composite command with {len(self.commands)} sub-commands")
-        # Mark that we're in a composite command execution
-        if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
-            old_state = self.undo_redo_manager.is_executing_command
-            self.undo_redo_manager.is_executing_command = True
-            self.logger.debug(f"COMPOSITE: Set is_executing_command to True (was {old_state})")
+        """Execute all commands in the composite."""
+        self.logger.debug(f"Executing composite command with {len(self.commands)} sub-commands")
+        results = []
         
-        # Clear completed commands list
-        self.completed_commands.clear()
+        for command in self.commands:
+            result = command.execute()
+            results.append(result)
             
-        try:
-            for idx, cmd in enumerate(self.commands):
-                try:
-                    # Store the result of the execution
-                    self.logger.debug(f"COMPOSITE: Executing sub-command {idx}: {cmd.__class__.__name__}")
-                    result = cmd.execute()
-                    self.completed_commands.append(cmd)  # Track successful executions
-                    
-                    # Store references to created objects
-                    if isinstance(cmd, AddDeviceCommand) and result:
-                        cmd.created_device = result
-                        self.logger.debug(f"COMPOSITE: Stored device reference for {cmd.__class__.__name__}")
-                    elif isinstance(cmd, AddConnectionCommand) and result:
-                        cmd.created_connection = result
-                        self.logger.debug(f"COMPOSITE: Stored connection reference for {cmd.__class__.__name__}")
-                except Exception as e:
-                    self.logger.error(f"COMPOSITE: Error executing command {idx}: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
-        finally:
-            # Reset the flag when done
-            if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
-                self.logger.debug(f"COMPOSITE: Restoring is_executing_command to {old_state}")
-                self.undo_redo_manager.is_executing_command = old_state
+        return results
         
-        self.logger.debug(f"COMPOSITE: Completed execution with {len(self.completed_commands)} successful commands")
-        return True
-    
     def undo(self):
-        """Undo all sub-commands in reverse order."""
-        self.logger.debug(f"COMPOSITE UNDO: Starting undo of composite command with {len(self.commands)} sub-commands")
-        
-        # Mark that we're in a composite command undo
-        if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
-            old_state = self.undo_redo_manager.is_executing_command
-            self.undo_redo_manager.is_executing_command = True
-            
-        # Use the completed commands list if available, otherwise use the commands list
-        commands_to_undo = list(reversed(self.completed_commands if self.completed_commands else self.commands))
-        
-        canvas = None
-        
-        try:
-            # Track how many commands of each type were undone
-            undone_counts = {"AddDeviceCommand": 0, "AddConnectionCommand": 0, "Other": 0}
-            
-            for idx, cmd in enumerate(commands_to_undo):
-                try:
-                    self.logger.debug(f"COMPOSITE UNDO: Undoing command {idx}: {cmd.__class__.__name__}")
-                    result = cmd.undo()
-                    
-                    # Count by command type
-                    if isinstance(cmd, AddDeviceCommand):
-                        undone_counts["AddDeviceCommand"] += 1
-                    elif isinstance(cmd, AddConnectionCommand):
-                        undone_counts["AddConnectionCommand"] += 1
-                    else:
-                        undone_counts["Other"] += 1
-                    
-                    # Find a canvas reference if possible
-                    if not canvas:
-                        if hasattr(cmd, 'device_controller') and hasattr(cmd.device_controller, 'canvas'):
-                            canvas = cmd.device_controller.canvas
-                        elif hasattr(cmd, 'boundary_controller') and hasattr(cmd.boundary_controller, 'canvas'):
-                            canvas = cmd.boundary_controller.canvas
-                        elif hasattr(cmd, 'connection_controller') and hasattr(cmd.connection_controller, 'canvas'):
-                            canvas = cmd.connection_controller.canvas
-                except Exception as e:
-                    self.logger.error(f"COMPOSITE UNDO: Error undoing command {idx}: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
-            
-            self.logger.debug(f"COMPOSITE UNDO: Completed undo. Undone commands: {undone_counts}")
-            
-        finally:
-            # Force canvas update at the end of all undos
-            if canvas:
-                canvas.viewport().update()
-                # Also update all scene views
-                if canvas.scene():
-                    for view in canvas.scene().views():
-                        view.viewport().update()
-                
-            # Reset the flag when done
-            if hasattr(self, 'undo_redo_manager') and self.undo_redo_manager:
-                self.undo_redo_manager.is_executing_command = old_state
+        """Undo all commands in reverse order."""
+        self.logger.debug(f"Undoing composite command with {len(self.commands)} sub-commands")
+        # Undo in reverse order
+        for command in reversed(self.commands):
+            command.undo()
 
 
 class AlignDevicesCommand(Command):

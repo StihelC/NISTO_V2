@@ -20,7 +20,6 @@ from models.boundary import Boundary
 from views.properties_panel import PropertiesPanel
 from controllers.properties_controller import PropertiesController
 from views.alignment_toolbar import AlignmentToolbar
-from controllers.alignment_controller import AlignmentController
 from controllers.commands import AlignDevicesCommand
 from controllers.device_alignment_controller import DeviceAlignmentController
 
@@ -210,12 +209,14 @@ class MainWindow(QMainWindow):
 
     def setup_alignment_tools(self):
         """Set up the alignment toolbar and controller."""
-        # Create alignment controller
-        self.alignment_controller = AlignmentController(
-            self.canvas, 
+        # Create alignment controller - use DeviceAlignmentController instead of undefined AlignmentController
+        self.alignment_controller = DeviceAlignmentController(
             self.event_bus, 
             self.command_manager.undo_redo_manager if (hasattr(self, 'command_manager') and self.command_manager) else None
         )
+        
+        # Store a reference to the canvas in the alignment controller
+        self.alignment_controller.canvas = self.canvas
         
         # Create alignment dropdown button instead of toolbar
         self._create_alignment_button()
@@ -226,7 +227,7 @@ class MainWindow(QMainWindow):
         # Connect alignment signals
         if self.event_bus:
             self.event_bus.on('devices.aligned', self.on_devices_aligned)
-    
+
     def _create_alignment_button(self):
         """Create a dropdown button for alignment options."""
         from PyQt5.QtWidgets import QToolBar, QToolButton
@@ -553,6 +554,7 @@ class MainWindow(QMainWindow):
         self.canvas.delete_boundary_requested.connect(self.boundary_controller.on_delete_boundary_requested)
         self.canvas.delete_item_requested.connect(self.on_delete_item_requested)
         self.canvas.delete_selected_requested.connect(self.on_delete_selected_requested)
+        self.canvas.connect_multiple_devices_requested.connect(self.connection_controller.on_connect_multiple_devices_requested)
     
     def set_mode(self, mode):
         """Set the current interaction mode."""

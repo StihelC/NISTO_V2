@@ -2,10 +2,10 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QGroupBox, 
     QFormLayout, QLineEdit, QSpinBox, QComboBox,
     QPushButton, QScrollArea, QHBoxLayout, QTableWidget,
-    QTableWidgetItem, QHeaderView, QCheckBox, QPlainTextEdit, QSpacerItem, QSizePolicy
+    QTableWidgetItem, QHeaderView, QCheckBox, QPlainTextEdit, QSpacerItem, QSizePolicy, QFrame, QGridLayout
 )
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QFont, QPalette
 
 class PropertiesPanel(QWidget):
     """A panel for displaying and editing properties of selected items."""
@@ -16,8 +16,8 @@ class PropertiesPanel(QWidget):
     device_property_changed = pyqtSignal(str, object)
     connection_property_changed = pyqtSignal(str, object)
     boundary_property_changed = pyqtSignal(str, object)
-    change_icon_requested = pyqtSignal(object)  # New signal for icon change
-    property_display_toggled = pyqtSignal(str, bool)  # New signal for toggling property display
+    change_icon_requested = pyqtSignal(object)
+    property_display_toggled = pyqtSignal(str, bool)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -29,6 +29,8 @@ class PropertiesPanel(QWidget):
     def _init_ui(self):
         """Initialize the UI elements."""
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(10)
         
         # Scrollable area for properties
         scroll_area = QScrollArea()
@@ -38,10 +40,11 @@ class PropertiesPanel(QWidget):
         # Content widget inside scroll area
         self.content_widget = QWidget()
         self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setSpacing(15)
         
         # Title for the panel
         title = QLabel("Properties")
-        title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        title.setStyleSheet("font-weight: bold; font-size: 14px; color: #2c3e50;")
         self.content_layout.addWidget(title)
         
         # Create sections
@@ -64,7 +67,9 @@ class PropertiesPanel(QWidget):
     def _create_general_section(self):
         """Create the general properties section."""
         group = QGroupBox("General")
+        group.setStyleSheet("QGroupBox { font-weight: bold; }")
         layout = QFormLayout(group)
+        layout.setVerticalSpacing(8)
         
         # Name field
         self.name_edit = QLineEdit()
@@ -81,14 +86,14 @@ class PropertiesPanel(QWidget):
         )
         layout.addRow("Layer (Z-Index):", self.z_index_spin)
         
-        # Remove color picker section
-        
         return group
     
     def _create_device_section(self):
         """Create the device-specific properties section."""
         group = QGroupBox("Device Properties")
+        group.setStyleSheet("QGroupBox { font-weight: bold; }")
         layout = QFormLayout(group)
+        layout.setVerticalSpacing(8)
         
         # Device type 
         self.device_type_label = QLabel()
@@ -96,12 +101,14 @@ class PropertiesPanel(QWidget):
         
         # Add button to change device icon
         self.change_icon_button = QPushButton("Change Icon")
+        self.change_icon_button.setStyleSheet("QPushButton { padding: 4px 8px; }")
         self.change_icon_button.clicked.connect(self._on_change_icon_clicked)
         layout.addRow("Icon:", self.change_icon_button)
         
         # Display options group
         display_group = QGroupBox("Display Options")
         display_layout = QVBoxLayout(display_group)
+        display_layout.setSpacing(6)
         self.display_checkboxes = {}
         
         # We'll populate these checkboxes dynamically when a device is selected
@@ -125,7 +132,9 @@ class PropertiesPanel(QWidget):
     def _create_connection_section(self):
         """Create the connection-specific properties section."""
         group = QGroupBox("Connection Properties")
+        group.setStyleSheet("QGroupBox { font-weight: bold; }")
         layout = QFormLayout(group)
+        layout.setVerticalSpacing(8)
         
         # Connection type
         self.connection_type_combo = QComboBox()
@@ -163,7 +172,9 @@ class PropertiesPanel(QWidget):
     def _create_boundary_section(self):
         """Create the boundary-specific properties section."""
         group = QGroupBox("Boundary Information")
+        group.setStyleSheet("QGroupBox { font-weight: bold; }")
         layout = QFormLayout(group)
+        layout.setVerticalSpacing(8)
         
         # Show contained devices
         self.boundary_devices_table = QTableWidget(0, 1)
@@ -198,8 +209,6 @@ class PropertiesPanel(QWidget):
         # Set z-index value
         self.z_index_spin.setValue(int(item.zValue()))
         
-        # Remove color preview update
-        
         # Show specific section based on item type
         from models.device import Device
         from models.connection import Connection
@@ -222,7 +231,7 @@ class PropertiesPanel(QWidget):
         # Disconnect signal to prevent firing while updating
         self.device_props_table.cellChanged.disconnect(self._on_device_property_changed)
         
-        # Clear and repopulate properties table
+        # Clear previous properties
         self.device_props_table.setRowCount(0)
         
         # Clear any existing display option checkboxes
@@ -231,14 +240,23 @@ class PropertiesPanel(QWidget):
         self.display_checkboxes.clear()
         
         # Find the display group within the device group
-        display_group = None
-        for i in range(self.device_group.layout().count()):
-            item = self.device_group.layout().itemAt(i)
-            if item.widget() and isinstance(item.widget(), QGroupBox) and item.widget().title() == "Display Options":
-                display_group = item.widget()
-                break
+        display_group = self._get_display_options_group()
         
         if hasattr(device, 'properties'):
+            # Create and configure grid layout for checkboxes
+            grid_layout = QGridLayout()
+            grid_layout.setHorizontalSpacing(10)
+            grid_layout.setVerticalSpacing(8)
+            
+            # Add the grid layout to the display group
+            if display_group:
+                self._reset_layout(display_group)
+                
+                # Add instructions label
+                display_group.setLayout(QVBoxLayout())
+                display_group.layout().addWidget(QLabel("Show properties under icon:"))
+                display_group.layout().addLayout(grid_layout)
+            
             row = 0
             for key, value in device.properties.items():
                 self.device_props_table.insertRow(row)
@@ -264,12 +282,42 @@ class PropertiesPanel(QWidget):
                         checkbox.setChecked(device.display_properties[key])
                     checkbox.toggled.connect(lambda checked, k=key: self.property_display_toggled.emit(k, checked))
                     self.display_checkboxes[key] = checkbox
-                    display_group.layout().addWidget(checkbox)
+                    
+                    # Add to grid, 3 columns
+                    grid_col = row % 3
+                    grid_row = row // 3
+                    grid_layout.addWidget(checkbox, grid_row, grid_col)
                 
                 row += 1
         
         # Reconnect signal
         self.device_props_table.cellChanged.connect(self._on_device_property_changed)
+    
+    def _get_display_options_group(self):
+        """Helper method to find the Display Options group within the device group."""
+        for i in range(self.device_group.layout().count()):
+            item = self.device_group.layout().itemAt(i)
+            if (item and item.widget() and 
+                isinstance(item.widget(), QGroupBox) and 
+                item.widget().title() == "Display Options"):
+                return item.widget()
+        return None
+    
+    def _reset_layout(self, widget):
+        """Safely reset a widget's layout by removing all child widgets."""
+        old_layout = widget.layout()
+        if (old_layout):
+            # Take ownership of items before deleting layout
+            while old_layout.count():
+                item = old_layout.takeAt(0)
+                if item.widget():
+                    item.widget().setParent(None)
+                elif item.layout():
+                    # Handle nested layouts if any
+                    for i in range(item.layout().count()):
+                        nested_item = item.layout().itemAt(i)
+                        if nested_item.widget():
+                            nested_item.widget().setParent(None)
     
     def _display_connection_properties(self, connection):
         """Update the panel with connection-specific properties."""
@@ -369,19 +417,38 @@ class PropertiesPanel(QWidget):
         """Show common properties for multiple selected devices."""
         # Clear current content
         self.clear()
+        self.current_item = None  # Clear current item reference
         
-        # Remove the "No item selected" label if it exists
-        for i in range(self.content_layout.count()):
-            item = self.content_layout.itemAt(i)
-            if item and item.widget() and isinstance(item.widget(), QLabel) and item.widget().text() == "No item selected":
-                item.widget().setParent(None)
-                break
+        # Create main layout with sections
+        main_container = QWidget()
+        main_layout = QVBoxLayout(main_container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(15)
         
         # Create heading
         device_count = len(devices)
-        heading = QLabel(f"<b>Editing {device_count} Devices</b>")
+        heading = QLabel(f"<b>{device_count} Devices Selected</b>")
+        heading.setStyleSheet("font-size: 14px; color: #2c3e50;")
         heading.setAlignment(Qt.AlignCenter)
-        self.content_layout.addWidget(heading)
+        main_layout.addWidget(heading)
+        
+        # Add device names for reference
+        devices_list = [device.name for device in devices[:5]]
+        if len(devices) > 5:
+            devices_list.append(f"...and {len(devices) - 5} more")
+            
+        device_names = QLabel(", ".join(devices_list))
+        device_names.setWordWrap(True)
+        device_names.setAlignment(Qt.AlignCenter)
+        device_names.setStyleSheet("color: #7f8c8d; font-style: italic; margin-bottom: 10px;")
+        main_layout.addWidget(device_names)
+        
+        # Horizontal line separator
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("background-color: #ecf0f1;")
+        main_layout.addWidget(line)
         
         # Collect common property names across all selected devices
         common_props = self._get_common_properties(devices)
@@ -390,62 +457,23 @@ class PropertiesPanel(QWidget):
             # No common editable properties
             no_props_label = QLabel("No common editable properties")
             no_props_label.setAlignment(Qt.AlignCenter)
-            self.content_layout.addWidget(no_props_label)
+            no_props_label.setStyleSheet("color: #7f8c8d; font-style: italic; padding: 20px;")
+            main_layout.addWidget(no_props_label)
+            self.content_layout.addWidget(main_container)
             return
         
-        # Display options group - for controlling what's shown under devices
-        display_group = QGroupBox("Display Options")
-        display_layout = QVBoxLayout(display_group)
-        display_layout.addWidget(QLabel("Show properties under devices:"))
-        self.display_checkboxes = {}
-        
-        # Add display checkboxes for common properties
-        for prop_name in common_props:
-            # Skip color property for display options
-            if prop_name.lower() == 'color':
-                continue
-                
-            # Determine if this property is displayed in all, some, or no devices
-            display_count = 0
-            for device in devices:
-                if (hasattr(device, 'display_properties') and 
-                    prop_name in device.display_properties and 
-                    device.display_properties[prop_name]):
-                    display_count += 1
-            
-            # Create checkbox with appropriate state
-            checkbox = QCheckBox(prop_name)
-            if display_count == len(devices):
-                # Displayed in all devices - checked
-                checkbox.setChecked(True)
-                checkbox.setTristate(False)
-            elif display_count > 0:
-                # Displayed in some devices - partial
-                checkbox.setTristate(True)
-                checkbox.setCheckState(Qt.PartiallyChecked)
-            else:
-                # Not displayed - unchecked
-                checkbox.setChecked(False)
-                checkbox.setTristate(False)
-                
-            # Connect to handler that will toggle display for all selected devices
-            checkbox.stateChanged.connect(lambda state, name=prop_name: 
-                                         self._emit_display_toggle(name, state))
-            self.display_checkboxes[prop_name] = checkbox
-            display_layout.addWidget(checkbox)
-        
-        # Add display options to panel
-        self.content_layout.addWidget(display_group)
-        
-        # Create a form layout for the properties
-        form_container = QGroupBox("Common Properties")
-        form_layout = QFormLayout(form_container)
+        # Create properties section
+        properties_group = QGroupBox("Common Properties")
+        properties_group.setStyleSheet("QGroupBox { font-weight: bold; }")
+        properties_layout = QFormLayout(properties_group)
+        properties_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        properties_layout.setVerticalSpacing(8)
         
         # Add common properties
         for prop_name in common_props:
-            # Skip color properties or handle them specially
+            # Skip color properties for now
             if prop_name.lower() == 'color':
-                continue  # Skip color properties for now
+                continue
                 
             # Handle QColor and other unhashable types
             values = []
@@ -458,13 +486,11 @@ class PropertiesPanel(QWidget):
                     
                 value = device.properties.get(prop_name, "")
                 
-                # Handle QColor objects
                 if isinstance(value, QColor):
                     # Convert QColor to string representation for comparison
                     value_str = f"rgba({value.red()},{value.green()},{value.blue()},{value.alpha()})"
                     values.append(value_str)
                     
-                    # Check if all values are the same
                     if i == 0:
                         first_value = value_str
                     elif value_str != first_value:
@@ -473,21 +499,24 @@ class PropertiesPanel(QWidget):
                     # For regular hashable values
                     values.append(value)
                     
-                    # Check if all values are the same
                     if i == 0:
                         first_value = value
                     elif value != first_value:
                         same_values = False
             
+            # Format the property name nicely
+            readable_name = prop_name.replace('_', ' ').title()
+            
             # Create the appropriate widget based on property type
             if prop_name.lower() in ["description", "notes"]:
                 # Multi-line text field for descriptions
                 widget = QPlainTextEdit()
+                widget.setMaximumHeight(80)  # Limit height
                 if same_values and values:
-                    value = values[0]
-                    widget.setPlainText(str(value))
+                    widget.setPlainText(str(values[0]))
                 else:
                     widget.setPlaceholderText("Multiple values - will be updated for all devices")
+                    widget.setStyleSheet("font-style: italic;")
                     
                 widget.textChanged.connect(lambda editor=widget, name=prop_name: 
                                          self._emit_property_change(name, editor.toPlainText()))
@@ -495,24 +524,101 @@ class PropertiesPanel(QWidget):
                 # Regular line edit for most properties
                 widget = QLineEdit()
                 if same_values and values:
-                    value = values[0]
-                    widget.setText(str(value))
+                    widget.setText(str(values[0]))
                 else:
-                    widget.setPlaceholderText("Multiple values")
+                    widget.setPlaceholderText("Multiple values - will be updated for all")
+                    widget.setStyleSheet("font-style: italic; color: #95a5a6;")
                     
                 widget.textChanged.connect(lambda text, name=prop_name: 
                                          self._emit_property_change(name, text))
             
             # Add to the form layout with a label
-            readable_name = prop_name.replace('_', ' ').title()
-            form_layout.addRow(readable_name + ":", widget)
+            properties_layout.addRow(readable_name + ":", widget)
         
-        # Add the form to the content layout
-        self.content_layout.addWidget(form_container)
+        main_layout.addWidget(properties_group)
+        
+        # Create separate display options section with improved layout
+        display_group = QGroupBox("Display Settings")
+        display_group.setStyleSheet("QGroupBox { font-weight: bold; }")
+        display_layout = QVBoxLayout(display_group)
+        
+        display_label = QLabel("Show properties under device icons:")
+        display_label.setStyleSheet("margin-bottom: 8px;")
+        display_layout.addWidget(display_label)
+        
+        # Create a grid layout for checkboxes with better spacing
+        checkbox_grid = QGridLayout()
+        checkbox_grid.setHorizontalSpacing(10)
+        checkbox_grid.setVerticalSpacing(8)
+        checkbox_grid.setColumnStretch(0, 1)
+        checkbox_grid.setColumnStretch(1, 1)
+        
+        # Third column if we have many properties
+        if len(common_props) > 5:
+            checkbox_grid.setColumnStretch(2, 1)
+        
+        self.display_checkboxes = {}
+        
+        # Add display checkboxes for common properties in a grid with improved visual clarity
+        row, col = 0, 0
+        max_cols = 3 if len(common_props) > 5 else 2
+        
+        # Sort properties alphabetically for better organization
+        sorted_props = sorted(common_props, key=lambda p: p.lower())
+        
+        for prop_name in sorted_props:
+            # Skip color property for display options
+            if prop_name.lower() == 'color':
+                continue
+                
+            # Determine if this property is displayed in all, some, or no devices
+            display_count = 0
+            for device in devices:
+                if (hasattr(device, 'display_properties') and 
+                    prop_name in device.display_properties and 
+                    device.display_properties[prop_name]):
+                    display_count += 1
+            
+            # Create checkbox with appropriate state and better formatting
+            readable_name = prop_name.replace('_', ' ').title()
+            checkbox = QCheckBox(readable_name)
+            
+            # Set an appropriate style based on state
+            if display_count == len(devices):
+                # Displayed in all devices - checked
+                checkbox.setChecked(True)
+                checkbox.setTristate(False)
+            elif display_count > 0:
+                # Displayed in some devices - partial
+                checkbox.setTristate(True)
+                checkbox.setCheckState(Qt.PartiallyChecked)
+                checkbox.setStyleSheet("QCheckBox::indicator:indeterminate { background-color: #3498db; }")
+            else:
+                # Not displayed - unchecked
+                checkbox.setChecked(False)
+                checkbox.setTristate(False)
+                
+            # Connect to handler that will toggle display for all selected devices
+            checkbox.stateChanged.connect(lambda state, name=prop_name: 
+                                         self._emit_display_toggle(name, state))
+            self.display_checkboxes[prop_name] = checkbox
+            
+            # Add to grid layout
+            checkbox_grid.addWidget(checkbox, row, col)
+            col += 1
+            if col >= max_cols:
+                col = 0
+                row += 1
+        
+        display_layout.addLayout(checkbox_grid)
+        main_layout.addWidget(display_group)
         
         # Add spacer at the bottom
         spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        self.content_layout.addItem(spacer)
+        main_layout.addItem(spacer)
+        
+        # Add the main container to the content layout
+        self.content_layout.addWidget(main_container)
     
     def _get_common_properties(self, devices):
         """Get common property names across all selected devices."""
@@ -566,12 +672,12 @@ class PropertiesPanel(QWidget):
         if scroll_area:
             self.layout().addWidget(scroll_area)
             
-        # Show a "No selection" message
+        # Show a "No selection" message with improved styling
         no_selection_label = QLabel("No item selected")
         no_selection_label.setAlignment(Qt.AlignCenter)
-        no_selection_label.setStyleSheet("color: gray; font-style: italic;")
+        no_selection_label.setStyleSheet("color: #95a5a6; font-style: italic; padding: 20px;")
         self.content_layout.addWidget(no_selection_label)
-        
+    
     def _emit_property_change(self, prop_name, value):
         """Emit property change signal for multiple device editing."""
         self.device_property_changed.emit(prop_name, value)

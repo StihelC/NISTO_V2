@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMessageBox, QGraphicsItem
+from PyQt5.QtWidgets import QMessageBox, QGraphicsItem, QDialog
 from PyQt5.QtCore import Qt
 import logging
 import traceback
@@ -6,6 +6,7 @@ import traceback
 from models.connection import Connection
 from controllers.commands import AddConnectionCommand, DeleteConnectionCommand
 from constants import ConnectionTypes
+from views.multi_connection_dialog import MultiConnectionDialog
 
 class ConnectionController:
     """Controller for managing connection-related operations."""
@@ -18,6 +19,10 @@ class ConnectionController:
         
         # Debug flag for more verbose logging
         self.debug_mode = True
+        
+        # Connect to canvas signals
+        self.canvas.add_connection_requested.connect(self.on_add_connection_requested)
+        self.canvas.connect_multiple_devices_requested.connect(self.on_connect_multiple_devices_requested)
     
     def on_add_connection_requested(self, source_device, target_device, properties=None):
         """Handle request to add a new connection."""
@@ -180,6 +185,145 @@ class ConnectionController:
             self.logger.error(f"Error creating connection: {str(e)}")
             self.logger.error(traceback.format_exc())
             return None
+
+    def on_connect_multiple_devices_requested(self, devices):
+        """Handle request to connect multiple devices together.
+        
+        This creates connections between all pairs of devices in the selection.
+        
+        Args:
+            devices: List of selected devices to connect
+        """
+        self.logger.info(f"Connecting {len(devices)} devices together")
+        
+        if len(devices) < 2:
+            self.logger.warning("Need at least 2 devices to create connections")
+            return
+        
+        # Show dialog to configure connection properties
+        dialog = MultiConnectionDialog(self.canvas.parent())
+        if dialog.exec_() != QDialog.Accepted:
+            self.logger.info("User cancelled multi-device connection")
+            return False
+        
+        # Get connection properties from dialog
+        connection_data = dialog.get_connection_data()
+        properties = {
+            'type': connection_data['type'],
+            'label': connection_data['label'],
+            'bandwidth': connection_data['bandwidth'],
+            'latency': connection_data['latency']
+        }
+        
+        # Determine connection mode
+        mesh_mode = connection_data['mesh']
+        
+        # Use a composite command if undo/redo is available
+        if self.undo_redo_manager and not self.undo_redo_manager.is_in_command_execution():
+            from controllers.commands import CompositeCommand, AddConnectionCommand
+            
+            composite_cmd = CompositeCommand(description=f"Connect {len(devices)} Devices")
+            
+            # Create connections based on selected mode
+            connection_count = 0
+            
+            if mesh_mode:
+                # Mesh mode: connect all devices to each other
+                for i in range(len(devices)):
+                    source_device = devices[i]
+                    for j in range(i+1, len(devices)):
+                        target_device = devices[j]
+                        
+                        # Skip if connection already exists
+                        if self._connection_exists(source_device, target_device):
+                            continue
+                        
+                        # Create the connection command
+                        conn_cmd = AddConnectionCommand(
+                            self,
+                            source_device, 
+                            target_device,
+                            None,
+                            None,
+                            properties
+                        )
+                        
+                        composite_cmd.add_command(conn_cmd)
+                        connection_count += 1
+            else:
+                # Chain mode: connect devices in sequence
+                for i in range(len(devices)-1):
+                    source_device = devices[i]
+                    target_device = devices[i+1]
+                    
+                    # Skip if connection already exists
+                    if self._connection_exists(source_device, target_device):
+                        continue
+                    
+                    # Create the connection command
+                    conn_cmd = AddConnectionCommand(
+                        self,
+                        source_device, 
+                        target_device,
+                        None,
+                        None,
+                        properties
+                    )
+                    
+                    composite_cmd.add_command(conn_cmd)
+                    connection_count += 1
+            
+            # Only push if we actually created connections
+            if connection_count > 0:
+                self.undo_redo_manager.push_command(composite_cmd)
+                self.logger.info(f"Created {connection_count} connections with undo support")
+                return True
+        else:
+            # Direct creation without undo support
+            connection_count = 0
+            
+            if mesh_mode:
+                # Mesh mode: connect all devices to each other
+                for i in range(len(devices)):
+                    source_device = devices[i]
+                    for j in range(i+1, len(devices)):
+                        target_device = devices[j]
+                        
+                        # Skip if connection already exists
+                        if self._connection_exists(source_device, target_device):
+                            continue
+                        
+                        # Create the connection
+                        connection = self.create_connection(source_device, target_device, None, None, properties)
+                        if connection:
+                            connection_count += 1
+            else:
+                # Chain mode: connect devices in sequence
+                for i in range(len(devices)-1):
+                    source_device = devices[i]
+                    target_device = devices[i+1]
+                    
+                    # Skip if connection already exists
+                    if self._connection_exists(source_device, target_device):
+                        continue
+                    
+                    # Create the connection
+                    connection = self.create_connection(source_device, target_device, None, None, properties)
+                    if connection:
+                        connection_count += 1
+            
+            self.logger.info(f"Created {connection_count} connections")
+            return connection_count > 0
+        
+        return False
+
+    def _connection_exists(self, device1, device2):
+        """Check if a connection already exists between two devices."""
+        for conn in self.canvas.connections:
+            if ((conn.source_device == device1 and conn.target_device == device2) or
+                (conn.source_device == device2 and conn.target_device == device1)):
+                return True
+        return False
 
     def _show_error(self, message):
         """Show error message dialog."""

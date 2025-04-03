@@ -13,19 +13,14 @@ class Modes:
     ADD_CONNECTION = "add_connection"
 
 class DeviceTypes:
-    """Device type constants."""
+    """Constants for device types."""
     ROUTER = "router"
     SWITCH = "switch"
     FIREWALL = "firewall"
     SERVER = "server"
-    WORKSTATION = "workstation"
     CLOUD = "cloud"
+    WORKSTATION = "workstation"
     GENERIC = "generic"
-    
-    @classmethod
-    def get_all_types(cls):
-        """Return a list of all device types."""
-        return [cls.ROUTER, cls.SWITCH, cls.FIREWALL, cls.SERVER, cls.WORKSTATION, cls.CLOUD, cls.GENERIC]
 
 class ConnectionTypes:
     """Constants for connection types."""

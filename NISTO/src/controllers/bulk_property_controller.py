@@ -7,7 +7,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 
 from models.device import Device
-from constants import DeviceTypes
 from controllers.commands import Command, CompositeCommand
 
 

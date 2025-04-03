@@ -38,6 +38,9 @@ class Canvas(QGraphicsView):
     # New signal for device alignment
     align_devices_requested = pyqtSignal(str, list)  # alignment_type, devices
     
+    # New signal for connecting multiple devices
+    connect_multiple_devices_requested = pyqtSignal(list)  # devices
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         
@@ -120,7 +123,7 @@ class Canvas(QGraphicsView):
                 selection-background-color: rgba(0, 100, 255, 50);
             }
         """)
-        
+            
         # Variable to track if rubber band selection is active
         self._rubber_band_active = False
     
@@ -342,6 +345,15 @@ class Canvas(QGraphicsView):
                 event.accept()
                 return
         
+        # Connect selected devices with Ctrl+L
+        if event.key() == Qt.Key_L and event.modifiers() & Qt.ControlModifier:
+            selected_devices = [i for i in self.scene().selectedItems() if i in self.devices]
+            if len(selected_devices) > 1:
+                self.connect_all_selected_devices()
+                self.statusMessage.emit(f"Connected {len(selected_devices)} devices")
+                event.accept()
+                return
+
         # If not handled above, pass to mode manager or parent
         if not self.mode_manager.handle_event("key_press_event", event):
             super().keyPressEvent(event)
@@ -357,11 +369,6 @@ class Canvas(QGraphicsView):
             
         super().keyReleaseEvent(event)
     
-    def get_item_at(self, pos):
-        """Get item at the given view position."""
-        scene_pos = self.mapToScene(pos)
-        return self.scene().itemAt(scene_pos, self.transform())
-        
     def scene(self):
         """Get the graphics scene."""
         return self._scene
@@ -438,9 +445,15 @@ class Canvas(QGraphicsView):
         if len(selected_devices) < 2:
             self.statusMessage.emit("At least two devices must be selected for alignment")
             return
-            
+                    
         # Emit signal for controller to handle
         self.align_devices_requested.emit(alignment_type, selected_devices)
+    
+    def connect_all_selected_devices(self):
+        """Emit signal to connect all selected devices together."""
+        selected_devices = [i for i in self.scene().selectedItems() if i in self.devices]
+        if len(selected_devices) > 1:
+            self.connect_multiple_devices_requested.emit(selected_devices)
     
     def contextMenuEvent(self, event):
         """Handle context menu event."""
@@ -471,6 +484,10 @@ class Canvas(QGraphicsView):
                 # If multiple devices are selected, offer bulk edit and alignment
                 bulk_edit_action = menu.addAction(f"Edit {len(selected_devices)} Devices...")
                 bulk_edit_action.triggered.connect(self._request_bulk_edit)
+                
+                # Add connect selected devices option
+                connect_action = menu.addAction(f"Connect {len(selected_devices)} Devices...")
+                connect_action.triggered.connect(self.connect_all_selected_devices)
                 
                 # Add alignment submenu
                 align_menu = menu.addMenu("Align Devices")
@@ -524,15 +541,17 @@ class Canvas(QGraphicsView):
                     action = security_layouts.addAction(action_text)
                     action.triggered.connect(lambda checked=False, a_type=alignment_type: 
                                            self.align_selected_devices(a_type))
-            
-            # ...existing device menu options...
         
         # Add bulk edit option if multiple devices are selected, regardless of what was clicked
         elif len(selected_devices) > 1:
             bulk_edit_action = menu.addAction(f"Edit {len(selected_devices)} Devices...")
             bulk_edit_action.triggered.connect(self._request_bulk_edit)
             
-            # Also add alignment options here
+            # Add connect selected devices option
+            connect_action = menu.addAction(f"Connect {len(selected_devices)} Devices...")
+            connect_action.triggered.connect(self.connect_all_selected_devices)
+            
+            # Add alignment options
             align_menu = menu.addMenu("Align Devices")
             
             # Basic alignment options
@@ -587,7 +606,7 @@ class Canvas(QGraphicsView):
             
         # Execute the menu
         menu.exec_(event.globalPos())
-    
+
     def _request_bulk_add(self):
         """Request bulk device addition through main window."""
         # Find the main window through parent hierarchy
