@@ -55,6 +55,7 @@ class PropertiesController:
         self.undo_redo_manager = undo_redo_manager
         self.logger = logging.getLogger(__name__)
         self.selected_item = None
+        self.selected_items = []  # Add this line to store multiple selected items
         
         # Connect panel signals
         self.panel.name_changed.connect(self._on_name_changed)
@@ -71,22 +72,47 @@ class PropertiesController:
     
     def on_selection_changed(self, selected_items):
         """Handle canvas selection changes."""
-        # For simplicity, focus on the first selected item
-        self.selected_item = None
+        self.update_properties_panel(selected_items)
+    
+    def update_properties_panel(self, selected_items=None):
+        """Update properties panel based on selection."""
+        if selected_items is None:
+            # If no items provided, get the current selection from the canvas
+            selected_items = self.canvas.scene().selectedItems()
         
-        if selected_items:
-            self.selected_item = selected_items[0]
-            self.panel.display_item_properties(self.selected_item)
-            
-            # Log selection details for debugging
-            self.logger.info(f"Selected item: {type(self.selected_item).__name__}")
-            
-            # If a boundary is selected, find contained devices
-            if isinstance(self.selected_item, Boundary):
-                contained_devices = self._get_devices_in_boundary(self.selected_item)
-                self.panel.set_boundary_contained_devices(contained_devices)
-        else:
-            self.panel.display_item_properties(None)
+        # Clear current selection reference
+        self.selected_item = None
+        self.selected_items = []
+        
+        # Handle the case when multiple items are selected
+        if len(selected_items) > 1:
+            # Filter to handle only devices for multi-selection
+            devices = [item for item in selected_items if item in self.canvas.devices]
+            if devices:
+                self.selected_items = devices
+                self.panel.show_multiple_devices(devices)
+                return
+        
+        # If we reach here, either nothing is selected or only one item is selected
+        if not selected_items:
+            # Nothing selected, show empty panel
+            self.panel.clear()
+            return
+        
+        # Get the first selected item
+        item = selected_items[0]
+        
+        # For simplicity, focus on the first selected item
+        self.selected_item = item
+        self.panel.display_item_properties(self.selected_item)
+        
+        # Log selection details for debugging
+        self.logger.info(f"Selected item: {type(self.selected_item).__name__}")
+        
+        # If a boundary is selected, find contained devices
+        if isinstance(self.selected_item, Boundary):
+            contained_devices = self._get_devices_in_boundary(self.selected_item)
+            self.panel.set_boundary_contained_devices(contained_devices)
     
     def _get_devices_in_boundary(self, boundary):
         """Get all devices contained within the boundary."""
@@ -258,32 +284,114 @@ class PropertiesController:
     
     def _on_property_display_toggled(self, prop_name, display_enabled):
         """Handle toggling of property display under device icons."""
-        if not self.selected_item or not isinstance(self.selected_item, Device):
+        # Handle single or multiple device selection
+        if self.selected_items:
+            # Apply to all selected devices
+            for device in self.selected_items:
+                self._toggle_property_display_for_device(device, prop_name, display_enabled)
+        elif self.selected_item and isinstance(self.selected_item, Device):
+            # Apply to single selected device
+            self._toggle_property_display_for_device(self.selected_item, prop_name, display_enabled)
+    
+    def _toggle_property_display_for_device(self, device, prop_name, display_enabled):
+        """Toggle property display for a single device with undo/redo support."""
+        if not isinstance(device, Device):
             return
             
         # Ensure the display_properties dict exists
-        if not hasattr(self.selected_item, 'display_properties'):
-            self.selected_item.display_properties = {}
+        if not hasattr(device, 'display_properties'):
+            device.display_properties = {}
             
         # Set the display preference for this property
-        old_value = self.selected_item.display_properties.get(prop_name, False)
+        old_value = device.display_properties.get(prop_name, False)
         if old_value != display_enabled:
-            self.logger.info(f"Toggling display of property '{prop_name}' to {display_enabled}")
+            self.logger.info(f"Toggling display of property '{prop_name}' to {display_enabled} for device {device.name}")
             
             if self.undo_redo_manager:
-                cmd = TogglePropertyDisplayCommand(self.selected_item, prop_name, old_value, display_enabled)
+                cmd = TogglePropertyDisplayCommand(device, prop_name, old_value, display_enabled)
                 self.undo_redo_manager.push_command(cmd)
             else:
-                self.selected_item.display_properties[prop_name] = display_enabled
-                self.selected_item.update_property_labels()
+                device.display_properties[prop_name] = display_enabled
+                device.update_property_labels()
                 
-            # Force canvas update
-            self.canvas.viewport().update()
-            
             # Notify via event bus
-            self.event_bus.emit("device_display_properties_changed", self.selected_item)
-            
+            if self.event_bus:
+                self.event_bus.emit("device_display_properties_changed", device)
 
+    def on_property_changed(self, property_name, value):
+        """Handle property changes from the panel."""
+        if self.selected_items:
+            # Handle multiple selected items
+            self._handle_multiple_property_change(property_name, value)
+        elif self.selected_item:
+            # Handle single selected item
+            self._handle_single_property_change(property_name, value)
+    
+    def _handle_multiple_property_change(self, property_name, value):
+        """Handle property change for multiple selected devices."""
+        # Store original values for undo/redo
+        original_values = {}
+        
+        for device in self.selected_items:
+            if hasattr(device, 'properties') and property_name in device.properties:
+                original_values[device] = device.properties.get(property_name)
+        
+        # If using command pattern
+        if self.undo_redo_manager:
+            from controllers.commands import BulkChangePropertyCommand
+            
+            cmd = BulkChangePropertyCommand(
+                self.selected_items,
+                property_name,
+                value,
+                original_values,
+                self.event_bus  # Pass event bus to the command
+            )
+            
+            self.undo_redo_manager.push_command(cmd)
+        else:
+            # Apply changes directly
+            for device in self.selected_items:
+                if hasattr(device, 'properties'):
+                    device.properties[property_name] = value
+                    # Notify about property change
+                    if self.event_bus:
+                        self.event_bus.emit('device_property_changed', device, property_name)
+        
+        # Notify that multiple devices' properties were changed
+        if self.event_bus:
+            self.event_bus.emit('bulk_properties_changed', self.selected_items)
+    
+    def _handle_single_property_change(self, property_name, value):
+        """Handle property change for a single selected device."""
+        if not self.selected_item or not isinstance(self.selected_item, Device):
+            return
+            
+        if hasattr(self.selected_item, 'properties') and property_name in self.selected_item.properties:
+            old_value = self.selected_item.properties[property_name]
+            
+            # Try to convert value to appropriate type
+            if isinstance(old_value, int):
+                try:
+                    value = int(value)
+                except ValueError:
+                    pass
+            elif isinstance(old_value, float):
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass
+            elif isinstance(old_value, bool):
+                value = value.lower() in ('true', 'yes', '1')
+            
+            if old_value != value:
+                self.logger.info(f"Changing device property '{property_name}' from '{old_value}' to '{value}'")
+                self.selected_item.properties[property_name] = value
+                
+                # Notify via event bus
+                if self.event_bus:
+                    self.event_bus.emit("device_property_changed", self.selected_item, property_name)
+    
 class TogglePropertyDisplayCommand(Command):
     """Command for toggling device property display."""
     

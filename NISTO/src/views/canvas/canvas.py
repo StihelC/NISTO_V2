@@ -252,19 +252,14 @@ class Canvas(QGraphicsView):
     def mouseMoveEvent(self, event):
         """Handle mouse move events."""
         try:
-            # Handle canvas panning - only if a mouse button is pressed
-            if self._is_panning and (event.buttons() & (Qt.LeftButton | Qt.MiddleButton)):
+            # Handle canvas panning
+            if self._is_panning:
                 self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - (event.x() - self._pan_start_x))
                 self.verticalScrollBar().setValue(self.verticalScrollBar().value() - (event.y() - self._pan_start_y))
                 self._pan_start_x = event.x()
                 self._pan_start_y = event.y()
                 event.accept()
                 return
-            elif self._is_panning and not (event.buttons() & (Qt.LeftButton | Qt.MiddleButton)):
-                # If no button is pressed but we're still in panning mode, exit panning
-                self._is_panning = False
-                self.setCursor(Qt.ArrowCursor)
-                self.setDragMode(QGraphicsView.RubberBandDrag)
             
             # Let the mode manager handle the event first
             if not self.mode_manager.handle_event("mouse_move_event", event):
@@ -278,14 +273,15 @@ class Canvas(QGraphicsView):
             
     def mouseReleaseEvent(self, event):
         """Handle mouse release events."""
-        # Always end canvas panning on mouse release, regardless of which button
+        # End canvas panning
         if self._is_panning:
-            self._is_panning = False
-            self.setCursor(Qt.ArrowCursor)
-            self.setDragMode(QGraphicsView.RubberBandDrag)  # Restore rubber band mode
-            event.accept()
-            # Don't return here, allow processing to continue
-
+            if event.button() == Qt.MiddleButton or (event.button() == Qt.LeftButton and event.modifiers() & Qt.ShiftModifier):
+                self._is_panning = False
+                self.setCursor(Qt.ArrowCursor)
+                self.setDragMode(QGraphicsView.RubberBandDrag)  # Restore rubber band mode
+                event.accept()
+                return
+        
         # Reset rubber band selection tracking
         if hasattr(self, '_rubber_band_active') and self._rubber_band_active and event.button() == Qt.LeftButton:
             self._rubber_band_active = False
@@ -336,7 +332,7 @@ class Canvas(QGraphicsView):
             self._temp_pan_mode = True
             event.accept()
             return
-        
+            
         # Handle delete key for selected items
         if event.key() == Qt.Key_Delete:
             selected_items = self.scene().selectedItems()
@@ -354,17 +350,18 @@ class Canvas(QGraphicsView):
         """Handle key release events."""
         # If space bar is released, exit pan mode
         if event.key() == Qt.Key_Space and hasattr(self, '_temp_pan_mode'):
-            self._temp_pan_mode = False
-            # Also make sure to end active panning if it was started
-            if hasattr(self, '_is_panning') and self._is_panning:
-                self._is_panning = False
             self.setCursor(Qt.ArrowCursor)
-            self.setDragMode(QGraphicsView.RubberBandDrag)
+            self._temp_pan_mode = False
             event.accept()
             return
-        
+            
         super().keyReleaseEvent(event)
     
+    def get_item_at(self, pos):
+        """Get item at the given view position."""
+        scene_pos = self.mapToScene(pos)
+        return self.scene().itemAt(scene_pos, self.transform())
+        
     def scene(self):
         """Get the graphics scene."""
         return self._scene
@@ -437,6 +434,7 @@ class Canvas(QGraphicsView):
         """Align selected devices according to the specified type."""
         selected_devices = [item for item in self.scene().selectedItems() 
                           if item in self.devices]
+        
         if len(selected_devices) < 2:
             self.statusMessage.emit("At least two devices must be selected for alignment")
             return
@@ -470,9 +468,62 @@ class Canvas(QGraphicsView):
         elif item in self.devices:
             # Device-specific menu options
             if len(selected_devices) > 1:
-                # If multiple devices are selected, offer bulk edit
+                # If multiple devices are selected, offer bulk edit and alignment
                 bulk_edit_action = menu.addAction(f"Edit {len(selected_devices)} Devices...")
                 bulk_edit_action.triggered.connect(self._request_bulk_edit)
+                
+                # Add alignment submenu
+                align_menu = menu.addMenu("Align Devices")
+                
+                # Basic alignment options
+                basic_align = align_menu.addMenu("Basic Alignment")
+                
+                basic_actions = {
+                    "Align Left": "left",
+                    "Align Right": "right",
+                    "Align Top": "top",
+                    "Align Bottom": "bottom",
+                    "Align Center Horizontally": "center_h",
+                    "Align Center Vertically": "center_v",
+                    "Distribute Horizontally": "distribute_h",
+                    "Distribute Vertically": "distribute_v"
+                }
+                
+                for action_text, alignment_type in basic_actions.items():
+                    action = basic_align.addAction(action_text)
+                    action.triggered.connect(lambda checked=False, a_type=alignment_type: 
+                                           self.align_selected_devices(a_type))
+                
+                # Network layouts submenu
+                network_layouts = align_menu.addMenu("Network Layouts")
+                
+                layout_actions = {
+                    "Grid Arrangement": "grid",
+                    "Circle Arrangement": "circle",
+                    "Star Arrangement": "star",
+                    "Bus Arrangement": "bus"
+                }
+                
+                for action_text, alignment_type in layout_actions.items():
+                    action = network_layouts.addAction(action_text)
+                    action.triggered.connect(lambda checked=False, a_type=alignment_type: 
+                                           self.align_selected_devices(a_type))
+                
+                # NIST RMF related layouts
+                security_layouts = align_menu.addMenu("Security Architectures")
+                
+                security_actions = {
+                    "DMZ Architecture": "dmz",
+                    "Defense-in-Depth Layers": "defense_in_depth",
+                    "Segmented Network": "segments",
+                    "Zero Trust Architecture": "zero_trust",
+                    "SCADA/ICS Zones": "ics_zones"
+                }
+                
+                for action_text, alignment_type in security_actions.items():
+                    action = security_layouts.addAction(action_text)
+                    action.triggered.connect(lambda checked=False, a_type=alignment_type: 
+                                           self.align_selected_devices(a_type))
             
             # ...existing device menu options...
         
@@ -480,6 +531,59 @@ class Canvas(QGraphicsView):
         elif len(selected_devices) > 1:
             bulk_edit_action = menu.addAction(f"Edit {len(selected_devices)} Devices...")
             bulk_edit_action.triggered.connect(self._request_bulk_edit)
+            
+            # Also add alignment options here
+            align_menu = menu.addMenu("Align Devices")
+            
+            # Basic alignment options
+            basic_align = align_menu.addMenu("Basic Alignment")
+            
+            basic_actions = {
+                "Align Left": "left",
+                "Align Right": "right",
+                "Align Top": "top",
+                "Align Bottom": "bottom",
+                "Align Center Horizontally": "center_h",
+                "Align Center Vertically": "center_v",
+                "Distribute Horizontally": "distribute_h",
+                "Distribute Vertically": "distribute_v"
+            }
+            
+            for action_text, alignment_type in basic_actions.items():
+                action = basic_align.addAction(action_text)
+                action.triggered.connect(lambda checked=False, a_type=alignment_type: 
+                                       self.align_selected_devices(a_type))
+            
+            # Network layouts submenu
+            network_layouts = align_menu.addMenu("Network Layouts")
+            
+            layout_actions = {
+                "Grid Arrangement": "grid",
+                "Circle Arrangement": "circle",
+                "Star Arrangement": "star",
+                "Bus Arrangement": "bus"
+            }
+            
+            for action_text, alignment_type in layout_actions.items():
+                action = network_layouts.addAction(action_text)
+                action.triggered.connect(lambda checked=False, a_type=alignment_type: 
+                                       self.align_selected_devices(a_type))
+            
+            # NIST RMF related layouts
+            security_layouts = align_menu.addMenu("Security Architectures")
+            
+            security_actions = {
+                "DMZ Architecture": "dmz",
+                "Defense-in-Depth Layers": "defense_in_depth",
+                "Segmented Network": "segments",
+                "Zero Trust Architecture": "zero_trust",
+                "SCADA/ICS Zones": "ics_zones"
+            }
+            
+            for action_text, alignment_type in security_actions.items():
+                action = security_layouts.addAction(action_text)
+                action.triggered.connect(lambda checked=False, a_type=alignment_type: 
+                                       self.align_selected_devices(a_type))
             
         # Execute the menu
         menu.exec_(event.globalPos())

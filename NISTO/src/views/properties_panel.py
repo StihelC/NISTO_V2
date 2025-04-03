@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QGroupBox, 
     QFormLayout, QLineEdit, QSpinBox, QComboBox,
     QPushButton, QScrollArea, QHBoxLayout, QTableWidget,
-    QTableWidgetItem, QHeaderView, QCheckBox
+    QTableWidgetItem, QHeaderView, QCheckBox, QPlainTextEdit, QSpacerItem, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor
@@ -364,3 +364,221 @@ class PropertiesPanel(QWidget):
         """Handle click on change icon button."""
         if self.current_item:
             self.change_icon_requested.emit(self.current_item)
+    
+    def show_multiple_devices(self, devices):
+        """Show common properties for multiple selected devices."""
+        # Clear current content
+        self.clear()
+        
+        # Remove the "No item selected" label if it exists
+        for i in range(self.content_layout.count()):
+            item = self.content_layout.itemAt(i)
+            if item and item.widget() and isinstance(item.widget(), QLabel) and item.widget().text() == "No item selected":
+                item.widget().setParent(None)
+                break
+        
+        # Create heading
+        device_count = len(devices)
+        heading = QLabel(f"<b>Editing {device_count} Devices</b>")
+        heading.setAlignment(Qt.AlignCenter)
+        self.content_layout.addWidget(heading)
+        
+        # Collect common property names across all selected devices
+        common_props = self._get_common_properties(devices)
+        
+        if not common_props:
+            # No common editable properties
+            no_props_label = QLabel("No common editable properties")
+            no_props_label.setAlignment(Qt.AlignCenter)
+            self.content_layout.addWidget(no_props_label)
+            return
+        
+        # Display options group - for controlling what's shown under devices
+        display_group = QGroupBox("Display Options")
+        display_layout = QVBoxLayout(display_group)
+        display_layout.addWidget(QLabel("Show properties under devices:"))
+        self.display_checkboxes = {}
+        
+        # Add display checkboxes for common properties
+        for prop_name in common_props:
+            # Skip color property for display options
+            if prop_name.lower() == 'color':
+                continue
+                
+            # Determine if this property is displayed in all, some, or no devices
+            display_count = 0
+            for device in devices:
+                if (hasattr(device, 'display_properties') and 
+                    prop_name in device.display_properties and 
+                    device.display_properties[prop_name]):
+                    display_count += 1
+            
+            # Create checkbox with appropriate state
+            checkbox = QCheckBox(prop_name)
+            if display_count == len(devices):
+                # Displayed in all devices - checked
+                checkbox.setChecked(True)
+                checkbox.setTristate(False)
+            elif display_count > 0:
+                # Displayed in some devices - partial
+                checkbox.setTristate(True)
+                checkbox.setCheckState(Qt.PartiallyChecked)
+            else:
+                # Not displayed - unchecked
+                checkbox.setChecked(False)
+                checkbox.setTristate(False)
+                
+            # Connect to handler that will toggle display for all selected devices
+            checkbox.stateChanged.connect(lambda state, name=prop_name: 
+                                         self._emit_display_toggle(name, state))
+            self.display_checkboxes[prop_name] = checkbox
+            display_layout.addWidget(checkbox)
+        
+        # Add display options to panel
+        self.content_layout.addWidget(display_group)
+        
+        # Create a form layout for the properties
+        form_container = QGroupBox("Common Properties")
+        form_layout = QFormLayout(form_container)
+        
+        # Add common properties
+        for prop_name in common_props:
+            # Skip color properties or handle them specially
+            if prop_name.lower() == 'color':
+                continue  # Skip color properties for now
+                
+            # Handle QColor and other unhashable types
+            values = []
+            same_values = True
+            first_value = None
+            
+            for i, device in enumerate(devices):
+                if not hasattr(device, 'properties'):
+                    continue
+                    
+                value = device.properties.get(prop_name, "")
+                
+                # Handle QColor objects
+                if isinstance(value, QColor):
+                    # Convert QColor to string representation for comparison
+                    value_str = f"rgba({value.red()},{value.green()},{value.blue()},{value.alpha()})"
+                    values.append(value_str)
+                    
+                    # Check if all values are the same
+                    if i == 0:
+                        first_value = value_str
+                    elif value_str != first_value:
+                        same_values = False
+                else:
+                    # For regular hashable values
+                    values.append(value)
+                    
+                    # Check if all values are the same
+                    if i == 0:
+                        first_value = value
+                    elif value != first_value:
+                        same_values = False
+            
+            # Create the appropriate widget based on property type
+            if prop_name.lower() in ["description", "notes"]:
+                # Multi-line text field for descriptions
+                widget = QPlainTextEdit()
+                if same_values and values:
+                    value = values[0]
+                    widget.setPlainText(str(value))
+                else:
+                    widget.setPlaceholderText("Multiple values - will be updated for all devices")
+                    
+                widget.textChanged.connect(lambda editor=widget, name=prop_name: 
+                                         self._emit_property_change(name, editor.toPlainText()))
+            else:
+                # Regular line edit for most properties
+                widget = QLineEdit()
+                if same_values and values:
+                    value = values[0]
+                    widget.setText(str(value))
+                else:
+                    widget.setPlaceholderText("Multiple values")
+                    
+                widget.textChanged.connect(lambda text, name=prop_name: 
+                                         self._emit_property_change(name, text))
+            
+            # Add to the form layout with a label
+            readable_name = prop_name.replace('_', ' ').title()
+            form_layout.addRow(readable_name + ":", widget)
+        
+        # Add the form to the content layout
+        self.content_layout.addWidget(form_container)
+        
+        # Add spacer at the bottom
+        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.content_layout.addItem(spacer)
+    
+    def _get_common_properties(self, devices):
+        """Get common property names across all selected devices."""
+        if not devices:
+            return []
+            
+        # Start with the first device's properties
+        if not hasattr(devices[0], 'properties'):
+            return []
+            
+        common_props = set(devices[0].properties.keys())
+        
+        # Find intersection with properties from all other devices
+        for device in devices[1:]:
+            if not hasattr(device, 'properties'):
+                return []
+            
+            common_props.intersection_update(device.properties.keys())
+        
+        # Sort properties for consistent display
+        return sorted(common_props)
+    
+    def clear(self):
+        """Clear all content from the properties panel."""
+        # Hide all sections
+        self.general_group.hide()
+        self.device_group.hide()
+        self.connection_group.hide()
+        self.boundary_group.hide()
+        
+        # Reset current item reference
+        self.current_item = None
+        self.boundary_devices = []
+        
+        # Clear any content in the main layout
+        # First, save the scroll area which is the main content
+        scroll_area = None
+        for i in range(self.layout().count()):
+            item = self.layout().itemAt(i)
+            if item and item.widget() and isinstance(item.widget(), QScrollArea):
+                scroll_area = item.widget()
+                break
+        
+        # Clear all widgets directly added to the layout (not in the scroll area)
+        while self.layout().count():
+            item = self.layout().takeAt(0)
+            if item.widget():
+                item.widget().setParent(None)
+        
+        # Add the scroll area back
+        if scroll_area:
+            self.layout().addWidget(scroll_area)
+            
+        # Show a "No selection" message
+        no_selection_label = QLabel("No item selected")
+        no_selection_label.setAlignment(Qt.AlignCenter)
+        no_selection_label.setStyleSheet("color: gray; font-style: italic;")
+        self.content_layout.addWidget(no_selection_label)
+        
+    def _emit_property_change(self, prop_name, value):
+        """Emit property change signal for multiple device editing."""
+        self.device_property_changed.emit(prop_name, value)
+
+    def _emit_display_toggle(self, prop_name, state):
+        """Emit property display toggle signal for multiple device editing."""
+        # Convert from Qt.CheckState to boolean
+        # Treat PartiallyChecked as checked (true)
+        display_enabled = state != Qt.Unchecked
+        self.property_display_toggled.emit(prop_name, display_enabled)

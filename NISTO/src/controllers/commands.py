@@ -435,3 +435,102 @@ class AlignDevicesCommand(Command):
         # Force canvas update
         if hasattr(self.alignment_controller, 'canvas') and self.alignment_controller.canvas:
             self.alignment_controller.canvas.viewport().update()
+
+
+class BulkChangePropertyCommand(Command):
+    """Command for changing a property on multiple devices at once."""
+    
+    def __init__(self, devices, property_name, new_value, original_values, event_bus=None):
+        """Initialize the command.
+        
+        Args:
+            devices: List of devices to modify
+            property_name: Name of the property to change
+            new_value: New value for the property
+            original_values: Dictionary mapping devices to their original values
+            event_bus: Optional event bus for notifications
+        """
+        super().__init__(f"Change {property_name} on multiple devices")
+        self.devices = devices
+        self.property_name = property_name
+        self.new_value = new_value
+        self.original_values = original_values
+        self.event_bus = event_bus
+        
+    def execute(self):
+        """Execute the command by applying the new property value to all devices."""
+        for device in self.devices:
+            if hasattr(device, 'properties'):
+                device.properties[self.property_name] = self.new_value
+                # Notify event bus if available
+                if self.event_bus:
+                    self.event_bus.emit('device_property_changed', device, self.property_name)
+                    
+                # Update labels if this property is displayed under the device
+                if hasattr(device, 'display_properties') and device.display_properties.get(self.property_name, False):
+                    device.update_property_labels()
+        
+        # Emit bulk change notification
+        if self.event_bus:
+            self.event_bus.emit('bulk_properties_changed', self.devices)
+            
+        return True
+        
+    def undo(self):
+        """Undo the command by restoring original property values."""
+        for device, orig_value in self.original_values.items():
+            if hasattr(device, 'properties'):
+                device.properties[self.property_name] = orig_value
+                # Notify event bus if available
+                if self.event_bus:
+                    self.event_bus.emit('device_property_changed', device, self.property_name)
+                    
+                # Update labels if this property is displayed under the device
+                if hasattr(device, 'display_properties') and device.display_properties.get(self.property_name, False):
+                    device.update_property_labels()
+        
+        # Emit bulk change notification
+        if self.event_bus:
+            self.event_bus.emit('bulk_properties_changed', list(self.original_values.keys()))
+            
+        return True
+
+class BulkTogglePropertyDisplayCommand(Command):
+    """Command for toggling display properties on multiple devices at once."""
+    
+    def __init__(self, devices, property_name, display_enabled, original_states, event_bus=None):
+        """Initialize the command."""
+        super().__init__(f"Toggle display of {property_name} on multiple devices")
+        self.devices = devices
+        self.property_name = property_name
+        self.display_enabled = display_enabled
+        self.original_states = original_states  # Dictionary mapping devices to original display states
+        self.event_bus = event_bus
+        
+    def execute(self):
+        """Execute the command by updating display settings on all devices."""
+        for device in self.devices:
+            if not hasattr(device, 'display_properties'):
+                device.display_properties = {}
+                
+            device.display_properties[self.property_name] = self.display_enabled
+            device.update_property_labels()
+            
+            # Notify via event bus
+            if self.event_bus:
+                self.event_bus.emit('device_display_properties_changed', device)
+        
+        return True
+        
+    def undo(self):
+        """Undo the command by restoring original display settings."""
+        for device, orig_state in self.original_states.items():
+            if orig_state is not None:  # Only restore if there was an original state
+                device.display_properties[self.property_name] = orig_state
+                device.update_property_labels()
+                
+                # Notify via event bus
+                if self.event_bus:
+                    self.event_bus.emit('device_display_properties_changed', device)
+        
+        return True

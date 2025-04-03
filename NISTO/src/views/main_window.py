@@ -22,12 +22,13 @@ from controllers.properties_controller import PropertiesController
 from views.alignment_toolbar import AlignmentToolbar
 from controllers.alignment_controller import AlignmentController
 from controllers.commands import AlignDevicesCommand
+from controllers.device_alignment_controller import DeviceAlignmentController
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NISTO")
-        # Set a larger default size for when the window is restored
+        # Set a reasonable default size instead of maximizing
         self.setGeometry(100, 100, 1280, 800)
 
         # Setup logging
@@ -48,15 +49,18 @@ class MainWindow(QMainWindow):
         # Create event bus for communication between components
         self.event_bus = EventBus()
         
+        # Initialize command_manager with a None value to avoid attribute errors
+        self.command_manager = None
+        
+        # Initialize undo_redo_manager to None to avoid attribute errors
+        self.undo_redo_manager = None
+        
         # Initialize controllers
         self._init_controllers()
         
         # Create menu manager and toolbar
         self.menu_manager = MenuManager(self, self.canvas, self.event_bus)
         self.menu_manager.create_toolbar()
-        
-        # Initialize command_manager with a None value to avoid attribute errors
-        self.command_manager = None
         
         # Create UI components
         self._create_ui_components()
@@ -70,8 +74,8 @@ class MainWindow(QMainWindow):
         # Register event handlers
         self._register_event_handlers()
         
-        # Add this line at the end of the __init__ method to maximize the window on startup
-        self.showMaximized()
+        # Remove the line that maximizes the window on startup
+        # self.showMaximized()
 
     def _init_controllers(self):
         """Initialize controllers for device, connection, and boundary management."""
@@ -192,6 +196,17 @@ class MainWindow(QMainWindow):
                 self.event_bus,
                 self.command_manager.undo_redo_manager if self.command_manager else None
             )
+        
+        # Initialize device alignment controller after undo_redo_manager is available
+        if not hasattr(self, 'device_alignment_controller') or self.device_alignment_controller is None:
+            self.undo_redo_manager = self.command_manager.undo_redo_manager if self.command_manager else None
+            self.device_alignment_controller = DeviceAlignmentController(
+                event_bus=self.event_bus,
+                undo_redo_manager=self.undo_redo_manager
+            )
+            
+            # Connect canvas alignment signal to controller
+            self.canvas.align_devices_requested.connect(self._on_align_devices_requested)
 
     def setup_alignment_tools(self):
         """Set up the alignment toolbar and controller."""
@@ -202,16 +217,115 @@ class MainWindow(QMainWindow):
             self.command_manager.undo_redo_manager if (hasattr(self, 'command_manager') and self.command_manager) else None
         )
         
-        # Create alignment toolbar
-        self.alignment_toolbar = AlignmentToolbar(self, self.alignment_controller)
-        self.addToolBar(Qt.TopToolBarArea, self.alignment_toolbar)
+        # Create alignment dropdown button instead of toolbar
+        self._create_alignment_button()
         
-        # Connect selection changed signal to update toolbar state
-        self.canvas.selection_changed.connect(self.alignment_toolbar.update_actions_state)
+        # Connect selection changed signal to update button state
+        self.canvas.selection_changed.connect(self._update_alignment_button_state)
         
         # Connect alignment signals
         if self.event_bus:
             self.event_bus.on('devices.aligned', self.on_devices_aligned)
+    
+    def _create_alignment_button(self):
+        """Create a dropdown button for alignment options."""
+        from PyQt5.QtWidgets import QToolBar, QToolButton
+        from PyQt5.QtGui import QIcon
+        
+        # Create a small toolbar for the alignment button
+        alignment_toolbar = QToolBar("Alignment", self)
+        alignment_toolbar.setMovable(True)
+        alignment_toolbar.setFloatable(True)
+        
+        # Create the dropdown button
+        self.alignment_button = QToolButton()
+        self.alignment_button.setText("Align")
+        self.alignment_button.setIcon(QIcon.fromTheme("format-justify-fill"))
+        self.alignment_button.setPopupMode(QToolButton.InstantPopup)
+        self.alignment_button.setToolTip("Alignment Options")
+        
+        # Create the menu for the button
+        alignment_menu = QMenu(self)
+        
+        # Basic alignment submenu
+        basic_align = alignment_menu.addMenu("Basic Alignment")
+        
+        basic_actions = {
+            "Align Left": "left",
+            "Align Right": "right",
+            "Align Top": "top",
+            "Align Bottom": "bottom",
+            "Align Center Horizontally": "center_h",
+            "Align Center Vertically": "center_v",
+            "Distribute Horizontally": "distribute_h",
+            "Distribute Vertically": "distribute_v"
+        }
+        
+        for action_text, alignment_type in basic_actions.items():
+            action = basic_align.addAction(action_text)
+            action.triggered.connect(lambda checked=False, a_type=alignment_type: 
+                                   self.canvas.align_selected_devices(a_type))
+        
+        # Network layouts submenu
+        network_layouts = alignment_menu.addMenu("Network Layouts")
+        
+        layout_actions = {
+            "Grid Arrangement": "grid",
+            "Circle Arrangement": "circle",
+            "Star Arrangement": "star",
+            "Bus Arrangement": "bus"
+        }
+        
+        for action_text, alignment_type in layout_actions.items():
+            action = network_layouts.addAction(action_text)
+            action.triggered.connect(lambda checked=False, a_type=alignment_type: 
+                                   self.canvas.align_selected_devices(a_type))
+        
+        # NIST RMF related layouts
+        security_layouts = alignment_menu.addMenu("Security Architectures")
+        
+        security_actions = {
+            "DMZ Architecture": "dmz",
+            "Defense-in-Depth Layers": "defense_in_depth",
+            "Segmented Network": "segments",
+            "Zero Trust Architecture": "zero_trust",
+            "SCADA/ICS Zones": "ics_zones"
+        }
+        
+        for action_text, alignment_type in security_actions.items():
+            action = security_layouts.addAction(action_text)
+            action.triggered.connect(lambda checked=False, a_type=alignment_type: 
+                                   self.canvas.align_selected_devices(a_type))
+        
+        # Set the menu to the button
+        self.alignment_button.setMenu(alignment_menu)
+        
+        # Add the button to the toolbar
+        alignment_toolbar.addWidget(self.alignment_button)
+        
+        # Add the toolbar to the main window
+        self.addToolBar(Qt.TopToolBarArea, alignment_toolbar)
+        
+        # Set initial state
+        self._update_alignment_button_state()
+    
+    def _update_alignment_button_state(self, selected_items=None):
+        """Update alignment button state based on selection."""
+        # Get selected devices if not provided
+        if selected_items is None:
+            selected_items = self.canvas.scene().selectedItems()
+        
+        # Count selected devices
+        selected_devices = [item for item in selected_items if item in self.canvas.devices]
+        
+        # Enable/disable the button based on selection count
+        self.alignment_button.setEnabled(len(selected_devices) >= 2)
+        
+        # Update tooltip to show how many devices are selected
+        if len(selected_devices) >= 2:
+            self.alignment_button.setToolTip(f"Align {len(selected_devices)} selected devices")
+        else:
+            self.alignment_button.setToolTip("Alignment (select at least 2 devices)")
 
     # Event handler methods
     def _on_device_property_changed(self, device, property_name):
@@ -584,3 +698,15 @@ class MainWindow(QMainWindow):
             self.logger.info("Canvas loaded successfully")
         else:
             self.logger.warning(f"Canvas load failed: {message}")
+
+    def _on_align_devices_requested(self, alignment_type, devices):
+        """Handle request to align devices."""
+        # Make sure the controller exists
+        if not hasattr(self, 'device_alignment_controller') or self.device_alignment_controller is None:
+            self.undo_redo_manager = self.command_manager.undo_redo_manager if self.command_manager else None
+            self.device_alignment_controller = DeviceAlignmentController(
+                event_bus=self.event_bus,
+                undo_redo_manager=self.undo_redo_manager
+            )
+            
+        self.device_alignment_controller.align_devices(alignment_type, devices)
