@@ -1,0 +1,485 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+🚀 NISTO Migration Guide (PyQt5 → React + FastAPI)
+1. Core Migration Strategy
+
+Main Window
+
+PyQt5 MainWindow → React App.jsx (main layout)
+
+Menus → React components with React Router for navigation
+
+Dialogs → Forms
+
+PyQt5 dialogs (QDialog) → React controlled forms (<form>, <input>, <button>)
+
+Event handlers → React onClick, onChange
+
+Properties Panel
+
+PyQt5 sidebar → React sidebar component
+
+Property editing → Controlled React form + live state updates
+
+Real-time updates → React useState + API calls
+
+2. Feature Mapping (MVP First)
+
+Device Management
+
+Backend: CRUD API in FastAPI (/devices)
+
+Frontend: DeviceList.jsx + DeviceForm.jsx
+
+Connection Management
+
+Backend: CRUD API (/connections)
+
+Frontend: ConnectionList.jsx + ConnectionForm.jsx
+
+Property Management
+
+Backend: update properties API
+
+Frontend: PropertyEditor.jsx
+
+Undo/Redo
+
+PyQt5 undo_redo_manager → Redux/Context state history
+
+React buttons (Undo, Redo) dispatch state actions
+
+UI Framework
+
+PyQt5 layouts → React components + CSS (Flexbox/Grid)
+
+Icons/resources → public/icons/ served to React
+
+3. Event Handling
+
+Signals/Slots (Qt) → useState, useEffect in React
+
+Event Bus → Context API or Redux for global state
+
+Component Communication → props drilling or context
+
+4. Data Flow
+
+PyQt5: Imperative (widget.setText("x"))
+
+React: Declarative (setState("x") → UI updates automatically)
+
+Data flows down via props, updates up via callbacks
+
+5. Mode Management
+
+PyQt5 mode manager → React Router routes (e.g., /edit, /view)
+
+Render different components based on current route/state
+
+⚖️ Key Differences: PyQt5 vs React
+PyQt5 (Desktop)	React (Web)
+Imperative updates (manually change widget properties)	Declarative rendering (UI = function of state)
+Signals/slots	Hooks (useState, useEffect)
+Event bus	Redux / Context API
+Layouts (QVBox/QHBox/Grid)	CSS Flexbox / Grid
+Dialogs	Forms & Modals
+Modes (via manager class)	Routes (React Router)
+
+👉 This guide is your translation playbook:
+
+Start with MVP features (devices, connections, properties, undo/redo).
+
+Translate PyQt5 widgets/dialogs into React components.
+
+Map signals/slots → hooks, event bus → Redux/Context.
+
+Use FastAPI for backend CRUD, React for state/UI.
+
+Do you want me to make a small side-by-side example (PyQt5 dialog → React form) so you can see exactly how the translation looks in code?
+
+You said:
+give me a through instruction sheet to prompt cursor to start making the transition
+ChatGPT said:
+
+Awesome—here’s a copy-paste “Cursor Mission Brief” you can drop into a new Cursor chat to kick off the PyQt5 → Web migration. It’s written so Cursor will scaffold the repo, generate code, and iterate in small, testable steps.
+
+🧠 Cursor Mission Brief: NISTO (PyQt5 → FastAPI + React)
+
+You are an expert full-stack engineer. Your job is to migrate a desktop PyQt5 network-topology tool (“NISTO”) into a web app (FastAPI + React) with a focused MVP.
+
+🎯 MVP Scope (Phase 1)
+
+Implement the core workflow only:
+
+Devices: create, list, edit, delete, basic config fields
+
+Connections: create, list, edit, delete (link two devices, type, properties)
+
+Properties: edit device/connection properties in a sidebar
+
+Undo/Redo: client-side history for device/connection CRUD + property edits
+
+Basic UI: main layout, top nav, simple forms/dialogs, list views
+
+Health: /healthz endpoint, simple logging
+
+Embed-Ready: allow iframe embedding in Notion
+
+Defer: clipboard, bulk ops, multi-mode editing, alignment tools, boundary shapes, advanced dialogs.
+
+🧱 Target Folder Structure
+NISTO_WEB/
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── api.py
+│   │   ├── models.py        # SQLAlchemy
+│   │   ├── schemas.py       # Pydantic
+│   │   ├── crud.py
+│   │   ├── db.py
+│   │   ├── deps.py
+│   │   └── utils.py
+│   ├── tests/
+│   │   ├── test_devices.py
+│   │   └── test_connections.py
+│   ├── requirements.txt
+│   └── README.md
+├── frontend/
+│   ├── public/
+│   └── src/
+│       ├── api/axios.ts
+│       ├── store/ (Redux Toolkit)
+│       │   ├── index.ts
+│       │   ├── devicesSlice.ts
+│       │   ├── connectionsSlice.ts
+│       │   └── undoRedoMiddleware.ts
+│       ├── components/
+│       │   ├── DeviceList.tsx
+│       │   ├── DeviceForm.tsx
+│       │   ├── ConnectionList.tsx
+│       │   ├── ConnectionForm.tsx
+│       │   └── PropertyEditor.tsx
+│       ├── pages/
+│       │   ├── Dashboard.tsx
+│       │   └── NotFound.tsx
+│       ├── App.tsx
+│       └── main.tsx
+├── deploy/
+│   ├── docker-compose.yml
+│   ├── nginx.conf
+│   └── README.md
+└── README.md
+
+📦 Tech & Conventions
+
+Backend: Python 3.11, FastAPI, SQLAlchemy, Uvicorn, Pydantic v2, Alembic (optional later), SQLite for dev (Postgres ready)
+
+Frontend: React + Vite + TypeScript, Redux Toolkit, React Router
+
+Styling: CSS Modules (keep simple; Tailwind can be added later if needed)
+
+Testing: pytest (backend), vitest/react-testing-library (frontend)
+
+API style: RESTful /{resource} with pagination later
+
+Commit cadence: small, test-backed commits; include brief rationale
+
+🗂️ Data Model (MVP)
+
+Device
+
+id: int (PK)
+
+name: str (required)
+
+type: str (switch/router/server/workstation/generic)
+
+x: float, y: float (optional for future canvas)
+
+config: JSON (dict of simple key/values)
+
+Connection
+
+id: int (PK)
+
+source_device_id: int (FK -> devices.id)
+
+target_device_id: int (FK -> devices.id)
+
+link_type: str (ethernet/fiber/vpn/etc.)
+
+properties: JSON
+
+Rules
+
+Prevent self-loop unless allow_self_link=true (not in MVP)
+
+Basic referential integrity; cascade deletes: deleting a device deletes its connections
+
+🔌 API Endpoints (MVP)
+
+Devices
+
+GET /api/devices → list
+
+POST /api/devices → create
+
+GET /api/devices/{id} → detail
+
+PUT /api/devices/{id} → update
+
+DELETE /api/devices/{id} → delete
+
+Connections
+
+GET /api/connections
+
+POST /api/connections
+
+GET /api/connections/{id}
+
+PUT /api/connections/{id}
+
+DELETE /api/connections/{id}
+
+Health
+
+GET /healthz → { "status": "ok" }
+
+All POST/PUT validate with Pydantic schemas; return 422 on invalid input.
+
+🔐 Embedding in Notion (Required)
+
+FastAPI middleware: set headers
+
+Content-Security-Policy: frame-ancestors 'self' https://www.notion.so https://notion.so;
+
+Do not set X-Frame-Options: DENY (omit or set to ALLOWALL)
+
+CORS: allow frontend origin in dev, restrict in prod
+
+Nginx (prod): preserve CSP above
+
+🧪 Acceptance Criteria (Phase 1)
+
+docker-compose up starts backend, frontend, and nginx proxy locally
+
+Visiting http://localhost shows Dashboard with:
+
+Device list + “Add Device” form (create/edit/delete)
+
+Connection list + “Add Connection” form (create/edit/delete)
+
+Property sidebar tied to selected device/connection
+
+Undo/Redo buttons that revert/apply last change (client-side)
+
+All API routes reachable under /api/*
+
+GET /healthz returns 200 JSON
+
+Basic backend tests pass: pytest
+
+Basic frontend tests pass: pnpm test (or npm/yarn)
+
+🧭 Step-By-Step Tasks (Generate Code for Each Step)
+Step 0 — Repo Init
+
+Create NISTO_WEB/ and subfolders per structure above.
+
+Add root README.md with project overview, run instructions, and MVP scope.
+
+Step 1 — Backend Scaffold
+
+Create FastAPI app with:
+
+main.py (app init, CORS, CSP headers, /healthz)
+
+db.py (SQLAlchemy engine/session; SQLite dev DB)
+
+models.py (Device, Connection)
+
+schemas.py (DeviceCreate/Update/Read; ConnectionCreate/Update/Read)
+
+crud.py (CRUD fns)
+
+api.py (APIRouter for /devices, /connections)
+
+Wire routers in main.py under /api.
+
+requirements.txt with fastapi, uvicorn, sqlalchemy, pydantic, python-multipart, pytest.
+
+Add backend/tests/test_devices.py and test_connections.py with: create → list → update → delete happy paths + 422/404 cases.
+
+Add Makefile or poetry optional (skip if slower).
+
+Definition of Done: uvicorn app.main:app runs; tests green with pytest -q.
+
+Step 2 — Frontend Scaffold
+
+Initialize Vite React + TS app in frontend/.
+
+Install: react-router-dom, @reduxjs/toolkit, react-redux, axios, vitest, @testing-library/react.
+
+Add api/axios.ts with baseURL /api.
+
+Configure store with devicesSlice, connectionsSlice; add undoRedoMiddleware.
+
+Add pages and components with minimal styling:
+
+Dashboard.tsx: two columns
+
+Left pane: DeviceList + “Add/Edit Device” modal
+
+Middle pane: ConnectionList + “Add/Edit Connection” modal
+
+Right pane: PropertyEditor (shows fields based on selection)
+
+Top bar: Undo / Redo buttons (disabled when no history)
+
+Add routes in App.tsx:
+
+/ → Dashboard
+
+* → NotFound
+
+Definition of Done: App loads, can CRUD devices/connections, edit props, undo/redo last action.
+
+Step 3 — Undo/Redo (Client-Side)
+
+Use Redux Toolkit:
+
+Keep a history stack of past states (devices, connections, selectedId, properties panel state).
+
+Limit to last 50 steps.
+
+Push on successful actions: create/update/delete device/connection, property edit, selection change.
+
+UNDO pops a state; REDO reapplies.
+
+Do not persist history to backend (MVP).
+
+Definition of Done: Clicking Undo/Redo updates UI predictably across CRUD/property edits.
+
+Step 4 — Notion Embed
+
+Add CSP middleware in backend:
+
+frame-ancestors 'self' https://www.notion.so https://notion.so
+
+Confirm embedded view renders at app root.
+
+Add an /embed route (frontend) that mounts the dashboard in a single-column layout (narrower min-height), no external nav.
+
+Definition of Done: Pasting app URL into a Notion “/embed” block renders the interactive app.
+
+Step 5 — Docker & Proxy
+
+docker-compose.yml with services:
+
+backend: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+frontend: vite dev or nginx serving built files (for prod)
+
+nginx: reverse proxy /: frontend, /api/: backend
+
+deploy/nginx.conf honors CSP header upstream; adds gzip, basic security headers.
+
+Update README with:
+
+Dev: run backend + frontend separately OR via compose
+
+Prod: vite build → serve static via nginx, proxy /api
+
+Definition of Done: docker-compose up yields a working full stack at http://localhost.
+
+🧰 Sample Commands (for CI sanity)
+
+Backend:
+
+python -m venv .venv && source .venv/bin/activate && pip install -r backend/requirements.txt
+
+pytest -q backend/tests
+
+Frontend:
+
+cd frontend && pnpm i && pnpm dev
+
+pnpm test
+
+Compose:
+
+docker-compose up --build
+
+📏 Coding Standards
+
+Type-annotate Python; enable strict mypy later
+
+Keep slices small and pure; side effects in thunks/middleware
+
+Catch and surface API errors (toast or inline error)
+
+Small, focused components; lift state into Redux only if shared
+
+Every PR includes a short checklist: what/why/how tested
+
+🧪 Minimal Test Cases (must implement)
+
+Devices API: create (201), list (200), update (200), delete (204), get(404) after delete, invalid payload (422)
+
+Connections API: same; plus creating with invalid device ids (400)
+
+Frontend:
+
+Render lists; add device; edit device; delete device
+
+Create connection between two existing devices
+
+Change a property in sidebar; verify it reflects in list
+
+Undo then Redo returns to prior state
+
+🔁 PyQt5 → React Mapping (for reference)
+
+MainWindow → App.tsx + Router
+
+Dialogs (QDialog) → Controlled React Forms/Modals
+
+Signals/Slots → useState, useEffect, Redux actions
+
+EventBus → Redux/Context
+
+Layouts (QHBox/VBox/Grid) → CSS Flexbox/Grid
+
+Imperative widget updates → Declarative state rendering
+
+⏭️ Start Now (first actions)
+
+Scaffold backend per Step 1; run uvicorn and pass tests.
+
+Scaffold frontend per Step 2; hard-code against a mocked API first, then wire real API.
+
+Add undo/redo middleware and buttons.
+
+Add CSP middleware for Notion embedding.
+
+Add docker-compose and nginx.
+
+At each step: show me generated files, explain choices, and run tests.
+
+📎 Extras (optional after MVP)
+
+Migrate SQLite → Postgres; add Alembic
+
+Add auth (JWT), projects/multi-tenant data
+
+Canvas positions (x,y) and visual editor
+
+Bulk actions, alignment tools, boundary shapes
+
+End of brief.
+Please proceed step-by-step, generating code and tests exactly to this spec. If anything is ambiguous, choose the simplest, testable option and document it in the README.

@@ -1,0 +1,43 @@
+version: '3.9'
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/docker/backend.Dockerfile
+    image: nisto-backend:dev
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    working_dir: /srv/backend
+    volumes:
+      - ../backend:/srv/backend
+      - ../backend/data:/srv/backend/data
+    environment:
+      - PYTHONPATH=/srv/backend
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/docker/frontend.Dockerfile
+    image: nisto-frontend:dev
+    working_dir: /srv/frontend
+    volumes:
+      - ../frontend:/srv/frontend
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+  nginx:
+    build:
+      context: ..
+      dockerfile: deploy/docker/nginx.Dockerfile
+    image: nisto-gateway:dev
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+
