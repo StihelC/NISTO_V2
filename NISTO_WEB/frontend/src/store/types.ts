@@ -42,9 +42,19 @@ export interface UiState {
   history: HistoryState
 }
 
+export interface ProjectsState {
+  projects: any[]
+  currentProject: any | null
+  isLoading: boolean
+  error: string | null
+  autoSaving: boolean
+  lastAutoSave: string | null
+}
+
 export interface RootState {
   devices: DevicesState
   connections: ConnectionsState
   ui: UiState
+  projects: ProjectsState
 }
 

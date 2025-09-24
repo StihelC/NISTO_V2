@@ -3,8 +3,8 @@ import { useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
 import { createDevice, deleteDevice } from '../store/devicesSlice'
-import type { DeviceType, RootState } from '../store/types'
 import { selectEntity } from '../store/uiSlice'
+import type { DeviceType, RootState } from '../store'
 
 const DEVICE_TYPES: DeviceType[] = ['switch', 'router', 'firewall', 'server', 'workstation', 'generic']
 

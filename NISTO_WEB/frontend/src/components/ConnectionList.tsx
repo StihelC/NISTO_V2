@@ -3,8 +3,8 @@ import { useMemo, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
 import { createConnection, deleteConnection } from '../store/connectionsSlice'
-import type { RootState } from '../store/types'
 import { selectEntity } from '../store/uiSlice'
+import type { RootState } from '../store'
 
 const ConnectionList = () => {
   const dispatch = useDispatch()

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -54,6 +55,53 @@ class ConnectionUpdate(BaseModel):
 
 class ConnectionRead(ConnectionBase):
     id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Project schemas
+class ProjectData(BaseModel):
+    devices: List[DeviceRead]
+    connections: List[ConnectionRead]
+    ui_state: Optional[Dict[str, Any]] = None
+
+
+class ProjectBase(BaseModel):
+    name: str = Field(..., min_length=1)
+    description: Optional[str] = None
+
+
+class ProjectCreate(ProjectBase):
+    project_data: ProjectData
+
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1)
+    description: Optional[str] = None
+    project_data: Optional[ProjectData] = None
+
+
+class ProjectRead(ProjectBase):
+    id: int
+    project_data: ProjectData
+    created_at: datetime
+    updated_at: datetime
+    is_auto_save: bool
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectSummary(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    is_auto_save: bool
+    device_count: int
+    connection_count: int
 
     class Config:
         from_attributes = True

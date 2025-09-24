@@ -1,6 +1,7 @@
-import { createSlice, nanoid } from '@reduxjs/toolkit'
+import { createSlice, createAsyncThunk, nanoid } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
 
+import { connectionsApi } from '../api/connections'
 import type { Connection, ConnectionsState } from './types'
 
 interface CreateConnectionPayload {
@@ -20,6 +21,25 @@ interface UpdateConnectionPayload {
 const initialState: ConnectionsState = {
   items: [],
 }
+
+// Async thunks
+export const fetchConnections = createAsyncThunk(
+  'connections/fetchConnections',
+  async (_, { rejectWithValue }) => {
+    try {
+      const connections = await connectionsApi.getConnections()
+      return connections.map(conn => ({
+        id: conn.id.toString(),
+        sourceDeviceId: conn.source_device_id.toString(),
+        targetDeviceId: conn.target_device_id.toString(),
+        linkType: conn.link_type,
+        properties: conn.properties,
+      }))
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.detail || 'Failed to fetch connections')
+    }
+  }
+)
 
 const connectionsSlice = createSlice({
   name: 'connections',
@@ -61,6 +81,15 @@ const connectionsSlice = createSlice({
     resetConnections() {
       return initialState
     },
+    setConnections(state, action: PayloadAction<Connection[]>) {
+      state.items = action.payload
+    },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchConnections.fulfilled, (state, action) => {
+        state.items = action.payload
+      })
   },
 })
 
@@ -70,6 +99,7 @@ export const {
   deleteConnection,
   deleteConnectionsByDevice,
   resetConnections,
+  setConnections,
 } = connectionsSlice.actions
 
 export default connectionsSlice.reducer
