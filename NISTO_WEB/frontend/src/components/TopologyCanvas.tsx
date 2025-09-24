@@ -12,7 +12,7 @@ const NODE_RADIUS = 36
 const LABEL_PADDING = 6
 const LABEL_HEIGHT = 22
 const ESTIMATED_CHAR_WIDTH = 7
-const MIN_ZOOM = 0.8
+const MIN_ZOOM = 1.0
 const MAX_ZOOM = 3
 const ZOOM_STEP = 0.05
 
