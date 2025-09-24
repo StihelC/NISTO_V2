@@ -1,0 +1,51 @@
+{
+  "name": "nisto-web",
+  "version": "1.0.0",
+  "description": "NISTO Web Application - Network Infrastructure Security Topology Organizer",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "test": "powershell -ExecutionPolicy Bypass -File ./run-tests.ps1",
+    "test:frontend": "powershell -ExecutionPolicy Bypass -File ./run-tests.ps1 -Target frontend",
+    "test:backend": "powershell -ExecutionPolicy Bypass -File ./run-tests.ps1 -Target backend",
+    "test:watch": "powershell -ExecutionPolicy Bypass -File ./run-tests.ps1 -Target frontend -Watch",
+    "test:coverage": "powershell -ExecutionPolicy Bypass -File ./run-tests.ps1 -Coverage",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "build:frontend": "cd frontend && npm run build",
+    "install:frontend": "cd frontend && npm install",
+    "install:backend": "cd backend && pip install -r requirements.txt",
+    "install:all": "npm run install:frontend && npm run install:backend",
+    "clean": "cd frontend && rm -rf node_modules dist && cd ../backend && rm -rf venv __pycache__ .pytest_cache",
+    "lint:frontend": "cd frontend && npm run lint",
+    "format:frontend": "cd frontend && npm run format",
+    "docker:up": "docker-compose -f deploy/docker-compose.yml up --build",
+    "docker:down": "docker-compose -f deploy/docker-compose.yml down"
+  },
+  "keywords": [
+    "network",
+    "topology",
+    "security",
+    "nist",
+    "react",
+    "fastapi",
+    "python",
+    "typescript"
+  ],
+  "author": "NISTO Development Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/nisto-web.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/nisto-web/issues"
+  },
+  "homepage": "https://github.com/your-org/nisto-web#readme"
+}

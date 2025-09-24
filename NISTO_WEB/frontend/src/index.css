@@ -446,11 +446,33 @@ a {
 .property-tabs {
   display: flex;
   gap: 0.25rem;
-  margin-top: 0.75rem;
+  padding: 0.75rem 1rem 0 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+
+.property-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.property-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.property-tabs::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 2px;
+}
+
+.property-tabs::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
 }
 
 .property-tabs .tab {
-  flex: 1;
+  flex: 1 0 auto;
+  min-width: max-content;
   padding: 0.5rem 0.75rem;
   background: transparent;
   border: 1px solid #e5e7eb;
@@ -460,6 +482,7 @@ a {
   color: #6b7280;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .property-tabs .tab.active {
@@ -471,6 +494,37 @@ a {
 .property-tabs .tab:hover:not(.active) {
   background-color: #f3f4f6;
   color: #374151;
+}
+
+/* Form Tabs */
+.form-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.form-tab {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.form-tab.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+.form-tab:hover:not(.active) {
+  color: #374151;
+  background-color: #f9fafb;
 }
 
 /* Property Sections */
@@ -653,12 +707,28 @@ a {
   }
 
   .property-tabs {
-    flex-wrap: wrap;
+    gap: 0.125rem;
+    padding: 0.5rem 0.75rem 0 0.75rem;
   }
 
   .property-tabs .tab {
-    flex: 1 1 auto;
-    min-width: 80px;
+    flex: 0 0 auto;
+    min-width: 70px;
+    padding: 0.375rem 0.5rem;
+    font-size: 0.8rem;
+  }
+}
+
+/* Extra small screens - even more compact tabs */
+@media (max-width: 480px) {
+  .property-tabs {
+    padding: 0.375rem 0.5rem 0 0.5rem;
+  }
+
+  .property-tabs .tab {
+    min-width: 60px;
+    padding: 0.375rem 0.375rem;
+    font-size: 0.75rem;
   }
 
   .controls-grid {
@@ -963,3 +1033,4 @@ hr {
   border-top: 1px solid #e5e7eb;
   margin: 1rem 0;
 }
+

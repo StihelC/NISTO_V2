@@ -2,11 +2,19 @@ import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
-import { createDevice, createDeviceAsync, deleteDevice, deleteDeviceAsync } from '../store/devicesSlice'
+import { createDevice, createDeviceAsync, deleteDevice, deleteDeviceAsync, createBulkDevicesAsync } from '../store/devicesSlice'
 import { selectEntity } from '../store/uiSlice'
 import type { DeviceType, RootState } from '../store'
 
 const DEVICE_TYPES: DeviceType[] = ['switch', 'router', 'firewall', 'server', 'workstation', 'generic']
+const ARRANGEMENT_TYPES = [
+  { value: 'grid', label: 'Grid' },
+  { value: 'circle', label: 'Circle' },
+  { value: 'line', label: 'Line' },
+  { value: 'random', label: 'Random' }
+] as const
+
+type ArrangementType = typeof ARRANGEMENT_TYPES[number]['value']
 
 const DeviceList = () => {
   const dispatch = useDispatch()
@@ -16,6 +24,14 @@ const DeviceList = () => {
   const [name, setName] = useState('')
   const [type, setType] = useState<DeviceType>('switch')
   const [error, setError] = useState<string | null>(null)
+  
+  // Bulk creation state
+  const [showBulkForm, setShowBulkForm] = useState(false)
+  const [bulkQuantity, setBulkQuantity] = useState(5)
+  const [bulkBaseName, setBulkBaseName] = useState('')
+  const [bulkType, setBulkType] = useState<DeviceType>('switch')
+  const [arrangement, setArrangement] = useState<ArrangementType>('grid')
+  const [bulkError, setBulkError] = useState<string | null>(null)
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -40,6 +56,34 @@ const DeviceList = () => {
     dispatch(selectEntity({ kind: 'device', id }))
   }
 
+  const handleBulkSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!bulkBaseName.trim()) {
+      setBulkError('Base name is required')
+      return
+    }
+    if (bulkQuantity < 1 || bulkQuantity > 50) {
+      setBulkError('Quantity must be between 1 and 50')
+      return
+    }
+
+    // Dispatch bulk creation
+    dispatch(createBulkDevicesAsync({
+      baseName: bulkBaseName,
+      type: bulkType,
+      quantity: bulkQuantity,
+      arrangement: arrangement
+    }))
+    
+    // Reset form
+    setBulkBaseName('')
+    setBulkQuantity(5)
+    setBulkType('switch')
+    setArrangement('grid')
+    setBulkError(null)
+    setShowBulkForm(false)
+  }
+
   return (
     <div className="panel">
       <header className="panel-header">
@@ -49,36 +93,104 @@ const DeviceList = () => {
         </div>
       </header>
       <div className="panel-content">
-        <form className="form" onSubmit={handleSubmit}>
-          <label className="form-field">
-            <span>Name</span>
-            <input
-              type="text"
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value)
-                if (error) {
-                  setError(null)
-                }
-              }}
-              placeholder="Device name"
-            />
-          </label>
-          <label className="form-field">
-            <span>Type</span>
-            <select value={type} onChange={(event) => setType(event.target.value as DeviceType)}>
-              {DEVICE_TYPES.map((deviceType) => (
-                <option key={deviceType} value={deviceType}>
-                  {deviceType}
-                </option>
-              ))}
-            </select>
-          </label>
-          {error && <p className="form-error">{error}</p>}
-          <button type="submit" className="primary-button">
-            Add Device
+        <div className="form-tabs">
+          <button 
+            className={`form-tab ${!showBulkForm ? 'active' : ''}`}
+            onClick={() => setShowBulkForm(false)}
+          >
+            Single Device
           </button>
-        </form>
+          <button 
+            className={`form-tab ${showBulkForm ? 'active' : ''}`}
+            onClick={() => setShowBulkForm(true)}
+          >
+            Multiple Devices
+          </button>
+        </div>
+
+        {!showBulkForm ? (
+          <form className="form" onSubmit={handleSubmit}>
+            <label className="form-field">
+              <span>Name</span>
+              <input
+                type="text"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value)
+                  if (error) {
+                    setError(null)
+                  }
+                }}
+                placeholder="Device name"
+              />
+            </label>
+            <label className="form-field">
+              <span>Type</span>
+              <select value={type} onChange={(event) => setType(event.target.value as DeviceType)}>
+                {DEVICE_TYPES.map((deviceType) => (
+                  <option key={deviceType} value={deviceType}>
+                    {deviceType}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {error && <p className="form-error">{error}</p>}
+            <button type="submit" className="primary-button">
+              Add Device
+            </button>
+          </form>
+        ) : (
+          <form className="form" onSubmit={handleBulkSubmit}>
+            <label className="form-field">
+              <span>Base Name</span>
+              <input
+                type="text"
+                value={bulkBaseName}
+                onChange={(event) => {
+                  setBulkBaseName(event.target.value)
+                  if (bulkError) {
+                    setBulkError(null)
+                  }
+                }}
+                placeholder="e.g., Switch (will create Switch-1, Switch-2, ...)"
+              />
+            </label>
+            <label className="form-field">
+              <span>Type</span>
+              <select value={bulkType} onChange={(event) => setBulkType(event.target.value as DeviceType)}>
+                {DEVICE_TYPES.map((deviceType) => (
+                  <option key={deviceType} value={deviceType}>
+                    {deviceType}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-field">
+              <span>Quantity</span>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={bulkQuantity}
+                onChange={(event) => setBulkQuantity(parseInt(event.target.value) || 1)}
+              />
+            </label>
+            <label className="form-field">
+              <span>Arrangement</span>
+              <select value={arrangement} onChange={(event) => setArrangement(event.target.value as ArrangementType)}>
+                {ARRANGEMENT_TYPES.map((arrangementType) => (
+                  <option key={arrangementType.value} value={arrangementType.value}>
+                    {arrangementType.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {bulkError && <p className="form-error">{bulkError}</p>}
+            <button type="submit" className="primary-button">
+              Add {bulkQuantity} Devices
+            </button>
+          </form>
+        )}
         <ul className="list">
           {devices.length === 0 && <li className="panel-placeholder">No devices yet.</li>}
           {devices.map((device) => (

@@ -154,33 +154,33 @@ const PropertyEditor = () => {
       <div className="panel">
         <header className="panel-header">
           <h3>Device Properties</h3>
-          <div className="property-tabs">
-            <button 
-              className={`tab ${activeTab === 'general' ? 'active' : ''}`}
-              onClick={() => setActiveTab('general')}
-            >
-              General
-            </button>
-            <button 
-              className={`tab ${activeTab === 'security' ? 'active' : ''}`}
-              onClick={() => setActiveTab('security')}
-            >
-              Security
-            </button>
-            <button 
-              className={`tab ${activeTab === 'controls' ? 'active' : ''}`}
-              onClick={() => setActiveTab('controls')}
-            >
-              Controls
-            </button>
-            <button 
-              className={`tab ${activeTab === 'risk' ? 'active' : ''}`}
-              onClick={() => setActiveTab('risk')}
-            >
-              Risk
-            </button>
-          </div>
         </header>
+        <div className="property-tabs">
+          <button 
+            className={`tab ${activeTab === 'general' ? 'active' : ''}`}
+            onClick={() => setActiveTab('general')}
+          >
+            General
+          </button>
+          <button 
+            className={`tab ${activeTab === 'security' ? 'active' : ''}`}
+            onClick={() => setActiveTab('security')}
+          >
+            Security
+          </button>
+          <button 
+            className={`tab ${activeTab === 'controls' ? 'active' : ''}`}
+            onClick={() => setActiveTab('controls')}
+          >
+            Controls
+          </button>
+          <button 
+            className={`tab ${activeTab === 'risk' ? 'active' : ''}`}
+            onClick={() => setActiveTab('risk')}
+          >
+            Risk
+          </button>
+        </div>
         <div className="panel-content">
           {activeTab === 'general' && (
             <div className="property-section">
