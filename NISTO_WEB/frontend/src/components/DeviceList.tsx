@@ -2,7 +2,7 @@ import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
-import { createDevice, deleteDevice } from '../store/devicesSlice'
+import { createDevice, createDeviceAsync, deleteDevice, deleteDeviceAsync } from '../store/devicesSlice'
 import { selectEntity } from '../store/uiSlice'
 import type { DeviceType, RootState } from '../store'
 
@@ -24,14 +24,20 @@ const DeviceList = () => {
       return
     }
 
+    // Create device in local state immediately for UI responsiveness
     dispatch(createDevice({ name, type }))
+    // Create device in backend asynchronously
+    dispatch(createDeviceAsync({ name, type }))
     setName('')
     setType('switch')
     setError(null)
   }
 
   const handleDelete = (id: string) => {
+    // Delete from local state immediately
     dispatch(deleteDevice(id))
+    // Delete from backend asynchronously
+    dispatch(deleteDeviceAsync(id))
   }
 
   const handleSelect = (id: string) => {

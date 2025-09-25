@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux'
 
 import { selectConnections, selectDevices, selectSelectedEntity } from '../store/selectors'
 import { selectEntity } from '../store/uiSlice'
-import { updateDevice } from '../store/devicesSlice'
+import { updateDevice, updateDeviceAsync } from '../store/devicesSlice'
 
 const CANVAS_WIDTH = 4000
 const CANVAS_HEIGHT = 2400
@@ -662,7 +662,10 @@ const TopologyCanvas = () => {
                     const finalPosition = dragState.position
                     setDragState(null)
                     if (finalPosition) {
+                      // Update local state immediately for UI responsiveness
                       dispatch(updateDevice({ id: device.id, position: finalPosition }))
+                      // Update backend asynchronously
+                      dispatch(updateDeviceAsync({ id: device.id, position: finalPosition }))
                     }
                   }
                 }}

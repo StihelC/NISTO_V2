@@ -43,7 +43,7 @@ export type RootStateFromStore = ReturnType<typeof store.getState>
 
 // Re-export everything for easier imports
 export type { RootState, DeviceType } from './types'
-export { fetchDevices } from './devicesSlice'
+export { fetchDevices, createDeviceAsync, updateDeviceAsync, deleteDeviceAsync } from './devicesSlice'
 export { fetchConnections } from './connectionsSlice'
 export * from './projectsSlice'
 export * from './historyActions'

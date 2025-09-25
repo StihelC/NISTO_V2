@@ -2,7 +2,7 @@ import type { ChangeEvent } from 'react'
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
-import { updateDevice } from '../store/devicesSlice'
+import { updateDevice, updateDeviceAsync } from '../store/devicesSlice'
 import { updateConnection } from '../store/connectionsSlice'
 import { selectEntity } from '../store/uiSlice'
 import type { DeviceType, RootState } from '../store'
@@ -107,19 +107,25 @@ const PropertyEditor = () => {
       const checked = (event.target as HTMLInputElement).checked
       
       if (name === 'name' || name === 'type') {
-        dispatch(
-          updateDevice({
-            id: device.id,
-            [name]: name === 'type' ? (value as DeviceType) : value,
-          }),
-        )
+        const updateData = {
+          id: device.id,
+          [name]: name === 'type' ? (value as DeviceType) : value,
+        }
+        // Update local state immediately
+        dispatch(updateDevice(updateData))
+        // Update backend asynchronously
+        dispatch(updateDeviceAsync(updateData))
       } else {
         // Update config for security properties
         const newConfig = {
           ...device.config,
           [name]: type === 'checkbox' ? checked.toString() : value
         }
-        dispatch(updateDevice({ id: device.id, config: newConfig }))
+        const updateData = { id: device.id, config: newConfig }
+        // Update local state immediately
+        dispatch(updateDevice(updateData))
+        // Update backend asynchronously
+        dispatch(updateDeviceAsync(updateData))
       }
     }
 
@@ -143,7 +149,11 @@ const PropertyEditor = () => {
         ...device.config,
         securityControls: JSON.stringify(controls)
       }
-      dispatch(updateDevice({ id: device.id, config: newConfig }))
+      const updateData = { id: device.id, config: newConfig }
+      // Update local state immediately
+      dispatch(updateDevice(updateData))
+      // Update backend asynchronously
+      dispatch(updateDeviceAsync(updateData))
     }
 
     return (
