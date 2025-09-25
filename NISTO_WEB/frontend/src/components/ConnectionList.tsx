@@ -2,7 +2,7 @@ import type { FormEvent } from 'react'
 import { useMemo, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
-import { createConnection, deleteConnection } from '../store/connectionsSlice'
+import { createConnection, deleteConnection, fetchConnections } from '../store/connectionsSlice'
 import { selectEntity } from '../store/uiSlice'
 import type { RootState } from '../store'
 
@@ -51,12 +51,40 @@ const ConnectionList = () => {
     dispatch(selectEntity({ kind: 'connection', id }))
   }
 
+  const drawConnections = () => {
+    console.log('🎨 Draw Connections clicked - fetching connections...')
+    dispatch(fetchConnections())
+  }
+
   return (
     <div className="panel">
       <header className="panel-header">
         <div>
           <h3>Connections</h3>
           <p className="panel-subtitle">Link devices together.</p>
+        </div>
+        <div>
+          <button 
+            type="button" 
+            className="btn btn-success btn-small" 
+            onClick={drawConnections}
+            title="Draw/refresh connection lines on canvas"
+          >
+            🎨 Draw Lines
+          </button>
+          <button 
+            type="button" 
+            className="btn btn-info btn-small" 
+            onClick={() => {
+              console.log('🔍 DEBUG: Current state')
+              console.log('Devices:', devices)
+              console.log('Connections:', connections)
+            }}
+            title="Debug current state"
+            style={{marginLeft: '0.5rem'}}
+          >
+            🐛 Debug
+          </button>
         </div>
       </header>
       <div className="panel-content">

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
 import { updateDevice, updateDeviceAsync, deleteDeviceAsync } from '../store/devicesSlice'
-import { updateConnection } from '../store/connectionsSlice'
+import { updateConnection, createConnectionAsync, fetchConnections } from '../store/connectionsSlice'
 import { selectEntity } from '../store/uiSlice'
 import type { DeviceType, RootState } from '../store'
 
@@ -51,6 +51,7 @@ const PropertyEditor = () => {
   
   // Move useState to top level to follow Rules of Hooks
   const [activeTab, setActiveTab] = useState<'general' | 'security' | 'controls' | 'risk'>('general')
+  const [connectionType, setConnectionType] = useState('ethernet')
 
   const device = selected?.kind === 'device' ? devices.find((item) => item.id === selected.id) : null
   const connection =
@@ -60,6 +61,113 @@ const PropertyEditor = () => {
   const multiSelectedDevices = multiSelected?.kind === 'device' 
     ? devices.filter(device => multiSelected.ids.includes(device.id))
     : []
+
+  // Auto-connect functions
+  const calculateDistance = (device1: any, device2: any) => {
+    if (!device1.position || !device2.position) return Infinity
+    const dx = device1.position.x - device2.position.x
+    const dy = device1.position.y - device2.position.y
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  const connectNearestNeighbor = async () => {
+    if (multiSelectedDevices.length < 2) return
+    
+    const connectionPromises: Promise<any>[] = []
+    
+    multiSelectedDevices.forEach((device, index) => {
+      if (index === multiSelectedDevices.length - 1) return // Skip last device
+      
+      // Find nearest unconnected device
+      let nearestDevice = null
+      let nearestDistance = Infinity
+      
+      for (let i = index + 1; i < multiSelectedDevices.length; i++) {
+        const otherDevice = multiSelectedDevices[i]
+        const distance = calculateDistance(device, otherDevice)
+        
+        if (distance < nearestDistance) {
+          nearestDistance = distance
+          nearestDevice = otherDevice
+        }
+      }
+      
+      if (nearestDevice) {
+        connectionPromises.push(
+          dispatch(createConnectionAsync({
+            sourceDeviceId: device.id,
+            targetDeviceId: nearestDevice.id,
+            linkType: connectionType
+          }))
+        )
+      }
+    })
+    
+    // Wait for all connections to be created (but don't auto-draw)
+    await Promise.all(connectionPromises)
+  }
+
+  const connectStar = async () => {
+    if (multiSelectedDevices.length < 2) return
+    
+    const centerDevice = multiSelectedDevices[0] // Use first as center
+    const connectionPromises: Promise<any>[] = []
+    
+    for (let i = 1; i < multiSelectedDevices.length; i++) {
+      connectionPromises.push(
+        dispatch(createConnectionAsync({
+          sourceDeviceId: centerDevice.id,
+          targetDeviceId: multiSelectedDevices[i].id,
+          linkType: connectionType
+        }))
+      )
+    }
+    
+    await Promise.all(connectionPromises)
+  }
+
+  const connectChain = async () => {
+    if (multiSelectedDevices.length < 2) return
+    
+    const connectionPromises: Promise<any>[] = []
+    
+    for (let i = 0; i < multiSelectedDevices.length - 1; i++) {
+      connectionPromises.push(
+        dispatch(createConnectionAsync({
+          sourceDeviceId: multiSelectedDevices[i].id,
+          targetDeviceId: multiSelectedDevices[i + 1].id,
+          linkType: connectionType
+        }))
+      )
+    }
+    
+    await Promise.all(connectionPromises)
+  }
+
+  const connectMesh = async () => {
+    if (multiSelectedDevices.length < 2) return
+    
+    const connectionPromises: Promise<any>[] = []
+    
+    for (let i = 0; i < multiSelectedDevices.length; i++) {
+      for (let j = i + 1; j < multiSelectedDevices.length; j++) {
+        connectionPromises.push(
+          dispatch(createConnectionAsync({
+            sourceDeviceId: multiSelectedDevices[i].id,
+            targetDeviceId: multiSelectedDevices[j].id,
+            linkType: connectionType
+          }))
+        )
+      }
+    }
+    
+    await Promise.all(connectionPromises)
+  }
+
+  const drawConnections = () => {
+    // Force refresh connections to ensure visual lines are drawn
+    dispatch(fetchConnections())
+  }
 
   useEffect(() => {
     if (selected && !device && !connection) {
@@ -113,6 +221,79 @@ const PropertyEditor = () => {
                 <option value="generic">Generic</option>
               </select>
             </label>
+
+            <div className="connection-section">
+              <h4>Auto-Connect Devices</h4>
+              <p className="connection-hint">Create connections between selected devices:</p>
+              
+              <label className="form-field">
+                <span>Connection Type</span>
+                <select 
+                  value={connectionType}
+                  onChange={(e) => setConnectionType(e.target.value)}
+                >
+                  <option value="ethernet">Ethernet</option>
+                  <option value="fiber">Fiber Optic</option>
+                  <option value="wireless">Wireless</option>
+                  <option value="vpn">VPN</option>
+                  <option value="serial">Serial</option>
+                  <option value="usb">USB</option>
+                  <option value="coax">Coaxial</option>
+                  <option value="bluetooth">Bluetooth</option>
+                  <option value="infrared">Infrared</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              
+              <div className="draw-connections-section">
+                <button 
+                  type="button" 
+                  className="btn btn-success btn-draw-connections" 
+                  onClick={drawConnections}
+                  title="Draw/refresh all connection lines on the canvas"
+                >
+                  🎨 Draw Connections
+                </button>
+              </div>
+
+              <div className="connection-buttons">
+                <button 
+                  type="button" 
+                  className="btn btn-primary btn-small" 
+                  onClick={connectNearestNeighbor}
+                  title="Connect each device to its nearest neighbor"
+                >
+                  📍 Nearest Neighbor
+                </button>
+                
+                <button 
+                  type="button" 
+                  className="btn btn-primary btn-small" 
+                  onClick={connectStar}
+                  title="Connect all devices to the first selected device (hub)"
+                >
+                  ⭐ Star Pattern
+                </button>
+                
+                <button 
+                  type="button" 
+                  className="btn btn-primary btn-small" 
+                  onClick={connectChain}
+                  title="Connect devices in sequence (chain)"
+                >
+                  🔗 Chain Pattern
+                </button>
+                
+                <button 
+                  type="button" 
+                  className="btn btn-primary btn-small" 
+                  onClick={connectMesh}
+                  title="Connect every device to every other device"
+                >
+                  🕸️ Full Mesh
+                </button>
+              </div>
+            </div>
             
             <div className="form-actions">
               <button 

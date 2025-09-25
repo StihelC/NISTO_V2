@@ -41,6 +41,29 @@ export const fetchConnections = createAsyncThunk(
   }
 )
 
+export const createConnectionAsync = createAsyncThunk(
+  'connections/createConnectionAsync',
+  async (payload: CreateConnectionPayload, { rejectWithValue }) => {
+    try {
+      const connection = await connectionsApi.createConnection({
+        source_device_id: parseInt(payload.sourceDeviceId),
+        target_device_id: parseInt(payload.targetDeviceId),
+        link_type: payload.linkType,
+        properties: {},
+      })
+      return {
+        id: connection.id.toString(),
+        sourceDeviceId: connection.source_device_id.toString(),
+        targetDeviceId: connection.target_device_id.toString(),
+        linkType: connection.link_type,
+        properties: connection.properties,
+      }
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.detail || 'Failed to create connection')
+    }
+  }
+)
+
 const connectionsSlice = createSlice({
   name: 'connections',
   initialState,
@@ -89,6 +112,9 @@ const connectionsSlice = createSlice({
     builder
       .addCase(fetchConnections.fulfilled, (state, action) => {
         state.items = action.payload
+      })
+      .addCase(createConnectionAsync.fulfilled, (state, action) => {
+        state.items.push(action.payload)
       })
   },
 })

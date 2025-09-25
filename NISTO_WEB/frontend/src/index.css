@@ -1144,6 +1144,76 @@ hr {
   color: #451a03;
 }
 
+/* Connection section */
+.connection-section {
+  margin: 1rem 0;
+  padding: 1rem;
+  background-color: #f0f9ff;
+  border: 1px solid #0ea5e9;
+  border-radius: 0.5rem;
+}
+
+.connection-section h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0c4a6e;
+}
+
+.connection-hint {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.75rem;
+  color: #0369a1;
+}
+
+.connection-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.connection-buttons .btn {
+  font-size: 0.75rem;
+  padding: 0.5rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.connection-buttons .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Draw connections section */
+.draw-connections-section {
+  margin: 0.75rem 0;
+  text-align: center;
+}
+
+.btn-draw-connections {
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  width: 100%;
+  background-color: #10b981;
+  color: white;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-draw-connections:hover {
+  background-color: #059669;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+}
+
+.btn-draw-connections:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+}
+
 /* Instruction text for multi-select */
 .multi-select-hint {
   margin: 0.5rem 0;

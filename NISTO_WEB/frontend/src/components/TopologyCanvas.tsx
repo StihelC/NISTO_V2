@@ -209,8 +209,6 @@ const TopologyCanvas = () => {
         const groupDevice = groupDragState.devices.find(d => d.id === device.id)
         if (groupDevice) {
           groupDragPosition = groupDevice.currentPosition
-          // Debug: Log when using group drag position
-          console.log(`Using group drag position for ${device.id}:`, groupDragPosition)
         }
       }
 
@@ -233,12 +231,22 @@ const TopologyCanvas = () => {
   }, [positionedDevices])
 
   const connectionSegments = useMemo(() => {
-    return connections
+    console.log('🔍 DEBUG: Calculating connection segments')
+    console.log('Connections count:', connections.length)
+    console.log('Connections data:', connections)
+    console.log('Device positions map:', positionsById)
+    
+    const result = connections
       .map((connection) => {
         const source = positionsById.get(connection.sourceDeviceId)
         const target = positionsById.get(connection.targetDeviceId)
 
+        console.log(`Connection ${connection.id}: ${connection.sourceDeviceId} → ${connection.targetDeviceId}`)
+        console.log(`Source position for ${connection.sourceDeviceId}:`, source)
+        console.log(`Target position for ${connection.targetDeviceId}:`, target)
+
         if (!source || !target) {
+          console.warn(`❌ Skipping connection ${connection.id} - missing positions`)
           return null
         }
 
@@ -255,7 +263,7 @@ const TopologyCanvas = () => {
         const labelX = midpoint.x - labelWidth / 2
         const labelY = midpoint.y - LABEL_HEIGHT / 2
 
-        return {
+        const segment = {
           connection,
           source,
           target,
@@ -269,8 +277,15 @@ const TopologyCanvas = () => {
             centerY: labelY + LABEL_HEIGHT / 2,
           },
         }
+        
+        console.log(`✅ Created segment for connection ${connection.id}:`, segment)
+        return segment
       })
       .filter((segment): segment is NonNullable<typeof segment> => Boolean(segment))
+    
+    console.log('🎯 Final connection segments count:', result.length)
+    console.log('🎯 Final connection segments:', result)
+    return result
   }, [connections, positionsById])
 
   const handleBackgroundClick = () => {
@@ -739,9 +754,6 @@ const TopologyCanvas = () => {
                       devices: updatedDevices,
                       hasMoved
                     } : null)
-                    
-                    // Debug: Log group drag positions
-                    console.log('Group drag positions:', updatedDevices.map(d => ({ id: d.id, pos: d.currentPosition })))
                     return
                   }
 
