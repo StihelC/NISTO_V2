@@ -36,6 +36,84 @@ const MIN_ZOOM = 0.5
 const MAX_ZOOM = 2.0
 const ZOOM_STEP = 0.1
 
+const isValidNumber = (value: number | undefined | null): value is number =>
+  typeof value === 'number' && !Number.isNaN(value)
+
+const DEFAULT_BOUNDARY_SIZE = 200
+
+const deriveBoundaryPosition = (boundary: any) => {
+  const { position } = boundary
+
+  if (
+    position &&
+    isValidNumber(position.x) &&
+    isValidNumber(position.y) &&
+    isValidNumber(position.width) &&
+    isValidNumber(position.height)
+  ) {
+    return {
+      x: position.x,
+      y: position.y,
+      width: position.width,
+      height: position.height
+    }
+  }
+
+  if (
+    isValidNumber(boundary.x) &&
+    isValidNumber(boundary.y) &&
+    isValidNumber(boundary.width) &&
+    isValidNumber(boundary.height)
+  ) {
+    return {
+      x: boundary.x,
+      y: boundary.y,
+      width: boundary.width,
+      height: boundary.height
+    }
+  }
+
+  if (Array.isArray(boundary.points) && boundary.points.length > 0) {
+    const xs = boundary.points.map((point: { x: number }) => point.x)
+    const ys = boundary.points.map((point: { y: number }) => point.y)
+
+    const minX = Math.min(...xs)
+    const maxX = Math.max(...xs)
+    const minY = Math.min(...ys)
+    const maxY = Math.max(...ys)
+
+    return {
+      x: minX,
+      y: minY,
+      width: Math.max(maxX - minX, 1),
+      height: Math.max(maxY - minY, 1)
+    }
+  }
+
+  return {
+    x: 0,
+    y: 0,
+    width: DEFAULT_BOUNDARY_SIZE,
+    height: DEFAULT_BOUNDARY_SIZE
+  }
+}
+
+const buildRectanglePoints = (position: { x: number; y: number; width: number; height: number }) => {
+  const { x, y, width, height } = position
+  return [
+    { x, y },
+    { x: x + width, y },
+    { x: x + width, y: y + height },
+    { x, y: y + height }
+  ]
+}
+
+const getBoundaryGeometry = (boundary: any) => {
+  const position = deriveBoundaryPosition(boundary)
+  const points = buildRectanglePoints(position)
+  return { position, points }
+}
+
 interface DragState {
   id: string
   offsetX: number
@@ -803,6 +881,8 @@ const TopologyCanvas = () => {
 
           {/* Render boundaries */}
           {boundaries.map(boundary => {
+            const { position, points } = getBoundaryGeometry(boundary)
+
             const isSelected = selected?.kind === 'boundary' && selected.id === boundary.id
             return (
               <g 
@@ -821,7 +901,7 @@ const TopologyCanvas = () => {
                 }}
               >
                 <polygon
-                  points={boundary.points.map(p => `${p.x},${p.y}`).join(' ')}
+                  points={points.map(p => `${p.x},${p.y}`).join(' ')}
                   fill={boundary.style.fill || 'none'}
                   fillOpacity={boundary.style.fillOpacity || 0}
                   stroke={isSelected ? '#2563eb' : boundary.style.color}
@@ -831,17 +911,17 @@ const TopologyCanvas = () => {
                 />
                 {/* Invisible clickable area for easier selection */}
                 <polygon
-                  points={boundary.points.map(p => `${p.x},${p.y}`).join(' ')}
+                  points={points.map(p => `${p.x},${p.y}`).join(' ')}
                   fill="transparent"
                   strokeWidth="10"
                   stroke="transparent"
                   style={{ pointerEvents: 'auto' }}
                 />
                 {/* Boundary label */}
-                {boundary.points.length > 0 && (
+                {points.length > 0 && (
                   <text
-                    x={boundary.points.reduce((sum, p) => sum + p.x, 0) / boundary.points.length}
-                    y={boundary.points.reduce((sum, p) => sum + p.y, 0) / boundary.points.length}
+                    x={points.reduce((sum, p) => sum + p.x, 0) / points.length}
+                    y={points.reduce((sum, p) => sum + p.y, 0) / points.length}
                     textAnchor="middle"
                     className="topology-boundary-label"
                     fill={isSelected ? '#2563eb' : boundary.style.color}
@@ -854,13 +934,12 @@ const TopologyCanvas = () => {
                 )}
 
                 {/* Resize handles for selected boundaries */}
-                {isSelected && boundary.points.length > 0 && (() => {
-                  // Calculate bounding box from points
-                  const minX = Math.min(...boundary.points.map(p => p.x))
-                  const maxX = Math.max(...boundary.points.map(p => p.x))
-                  const minY = Math.min(...boundary.points.map(p => p.y))
-                  const maxY = Math.max(...boundary.points.map(p => p.y))
-                  
+                {isSelected && points.length > 0 && (() => {
+                  const minX = position.x
+                  const minY = position.y
+                  const maxX = position.x + position.width
+                  const maxY = position.y + position.height
+
                   const handleSize = 8
                   const handleColor = '#2563eb'
                   
@@ -922,20 +1001,14 @@ const TopologyCanvas = () => {
                       }
                       
                       // Update boundary points to match new bounds
-                      const newPoints = [
-                        { x: newMinX, y: newMinY },
-                        { x: newMaxX, y: newMinY },
-                        { x: newMaxX, y: newMaxY },
-                        { x: newMinX, y: newMaxY }
-                      ]
-                      
-                      // Update position properties
                       const newPosition = {
                         x: newMinX,
                         y: newMinY,
                         width: newMaxX - newMinX,
                         height: newMaxY - newMinY
                       }
+
+                      const newPoints = buildRectanglePoints(newPosition)
                       
                       dispatch(updateBoundary({ 
                         id: boundary.id, 

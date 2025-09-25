@@ -76,6 +76,10 @@ export interface Boundary {
     width: number
     height: number
   }
+  x?: number
+  y?: number
+  width?: number
+  height?: number
   config: Record<string, string>
 }
 

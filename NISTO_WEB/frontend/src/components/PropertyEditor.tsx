@@ -971,6 +971,58 @@ const PropertyEditor = () => {
       securityControls: boundary.config?.securityControls ? JSON.parse(boundary.config.securityControls) : [],
     }
 
+    const getBoundaryBoundingBox = () => {
+      if (!boundary.points || boundary.points.length === 0) {
+        return {
+          x: boundary.x ?? 0,
+          y: boundary.y ?? 0,
+          width: boundary.width ?? 200,
+          height: boundary.height ?? 200
+        }
+      }
+
+      const xs = boundary.points.map(point => point.x)
+      const ys = boundary.points.map(point => point.y)
+      const minX = Math.min(...xs)
+      const maxX = Math.max(...xs)
+      const minY = Math.min(...ys)
+      const maxY = Math.max(...ys)
+
+      return {
+        x: minX,
+        y: minY,
+        width: Math.max(maxX - minX, 20),
+        height: Math.max(maxY - minY, 20)
+      }
+    }
+
+    const currentPositionFromBoundary = () => {
+      if (boundary.position && boundary.position.width !== undefined && boundary.position.height !== undefined) {
+        return {
+          x: boundary.position.x,
+          y: boundary.position.y,
+          width: boundary.position.width,
+          height: boundary.position.height
+        }
+      }
+
+      if (
+        boundary.x !== undefined &&
+        boundary.y !== undefined &&
+        boundary.width !== undefined &&
+        boundary.height !== undefined
+      ) {
+        return {
+          x: boundary.x,
+          y: boundary.y,
+          width: boundary.width,
+          height: boundary.height
+        }
+      }
+
+      return getBoundaryBoundingBox()
+    }
+
     const handleBoundaryChange = (event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       const { name, value } = event.target
       
@@ -997,13 +1049,47 @@ const PropertyEditor = () => {
           updates: { style: { ...boundary.style, dashArray: value || 'none' } }
         }))
       } else if (name === 'x' || name === 'y' || name === 'width' || name === 'height') {
-        const numValue = parseFloat(value) || 0
-        const currentPosition = boundary.position || { x: 0, y: 0, width: 200, height: 200 }
-        dispatch(updateBoundaryAsync({ 
-          id: boundary.id, 
-          updates: { 
-            position: { ...currentPosition, [name]: numValue },
-            [name]: numValue // Also update the individual field for backend compatibility
+        const parsed = parseFloat(value)
+        const numValue = Number.isFinite(parsed) ? parsed : 0
+
+        const basePosition = currentPositionFromBoundary()
+
+        const rawPosition = { ...basePosition, [name]: numValue }
+        const sanitizedPosition = {
+          x: rawPosition.x ?? 0,
+          y: rawPosition.y ?? 0,
+          width: rawPosition.width ?? boundary.position?.width ?? boundary.width ?? 200,
+          height: rawPosition.height ?? boundary.position?.height ?? boundary.height ?? 200
+        }
+
+        const updatedPoints = [
+          { x: sanitizedPosition.x, y: sanitizedPosition.y },
+          { x: sanitizedPosition.x + sanitizedPosition.width, y: sanitizedPosition.y },
+          { x: sanitizedPosition.x + sanitizedPosition.width, y: sanitizedPosition.y + sanitizedPosition.height },
+          { x: sanitizedPosition.x, y: sanitizedPosition.y + sanitizedPosition.height }
+        ]
+
+        dispatch(updateBoundary({
+          id: boundary.id,
+          updates: {
+            position: sanitizedPosition,
+            x: sanitizedPosition.x,
+            y: sanitizedPosition.y,
+            width: sanitizedPosition.width,
+            height: sanitizedPosition.height,
+            points: updatedPoints
+          }
+        }))
+
+        dispatch(updateBoundaryAsync({
+          id: boundary.id,
+          updates: {
+            position: sanitizedPosition,
+            x: sanitizedPosition.x,
+            y: sanitizedPosition.y,
+            width: sanitizedPosition.width,
+            height: sanitizedPosition.height,
+            points: updatedPoints
           }
         }))
       } else {

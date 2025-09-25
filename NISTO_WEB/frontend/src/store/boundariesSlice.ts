@@ -1,7 +1,89 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
+
 import type { Boundary, BoundaryType, BoundariesState } from './types'
-import { boundariesApi } from '../api/boundaries'
+import { boundariesApi, type BoundaryResponse } from '../api/boundaries'
+
+const MIN_BOUNDARY_SIZE = 20
+
+const computeBoundingBox = (points: Array<{ x: number; y: number }> | undefined) => {
+  if (!points || points.length === 0) {
+    return { x: 0, y: 0, width: 200, height: 200 }
+  }
+
+  const xs = points.map(point => point.x)
+  const ys = points.map(point => point.y)
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(maxX - minX, MIN_BOUNDARY_SIZE),
+    height: Math.max(maxY - minY, MIN_BOUNDARY_SIZE)
+  }
+}
+
+const isDefinedNumber = (value: number | null | undefined): value is number =>
+  value !== null && value !== undefined
+
+const normalizeBoundary = (boundary: BoundaryResponse): Boundary => {
+  const hasExplicitDimensions =
+    isDefinedNumber(boundary.x) &&
+    isDefinedNumber(boundary.y) &&
+    isDefinedNumber(boundary.width) &&
+    isDefinedNumber(boundary.height)
+
+  const dimensions = hasExplicitDimensions
+    ? {
+        x: boundary.x!,
+        y: boundary.y!,
+        width: Math.max(boundary.width!, MIN_BOUNDARY_SIZE),
+        height: Math.max(boundary.height!, MIN_BOUNDARY_SIZE)
+      }
+    : computeBoundingBox(boundary.points)
+
+  return {
+    id: boundary.id,
+    type: boundary.type as BoundaryType,
+    label: boundary.label,
+    points: boundary.points,
+    closed: boundary.closed,
+    style: boundary.style,
+    created: boundary.created,
+    position: dimensions,
+    x: dimensions.x,
+    y: dimensions.y,
+    width: dimensions.width,
+    height: dimensions.height,
+    config: boundary.config || {}
+  }
+}
+
+const mergeWithExistingBoundary = (existing: Boundary | undefined, response: BoundaryResponse): Boundary => {
+  const normalized = normalizeBoundary(response)
+
+  const serverProvidedDimensions =
+    isDefinedNumber(response.x) &&
+    isDefinedNumber(response.y) &&
+    isDefinedNumber(response.width) &&
+    isDefinedNumber(response.height)
+
+  if (!serverProvidedDimensions && existing) {
+    return {
+      ...normalized,
+      position: existing.position,
+      x: existing.x,
+      y: existing.y,
+      width: existing.width,
+      height: existing.height,
+    }
+  }
+
+  return normalized
+}
 
 // Boundary style presets
 export const BOUNDARY_STYLES = {
@@ -61,26 +143,7 @@ export const fetchBoundaries = createAsyncThunk(
   'boundaries/fetchBoundaries',
   async () => {
     const boundaries = await boundariesApi.getBoundaries()
-    return boundaries.map(boundary => ({
-      id: boundary.id,
-      type: boundary.type as BoundaryType,
-      label: boundary.label,
-      points: boundary.points,
-      closed: boundary.closed,
-      style: boundary.style,
-      created: boundary.created,
-      position: boundary.x && boundary.y ? {
-        x: boundary.x,
-        y: boundary.y,
-        width: boundary.width || 200,
-        height: boundary.height || 200
-      } : undefined,
-      x: boundary.x,
-      y: boundary.y,
-      width: boundary.width,
-      height: boundary.height,
-      config: boundary.config || {}
-    }))
+    return boundaries
   }
 )
 
@@ -95,32 +158,13 @@ export const createBoundaryAsync = createAsyncThunk(
       closed: boundary.closed,
       style: boundary.style,
       created: boundary.created,
-      x: boundary.position?.x || boundary.x,
-      y: boundary.position?.y || boundary.y,
-      width: boundary.position?.width || boundary.width,
-      height: boundary.position?.height || boundary.height,
+      x: boundary.position?.x ?? boundary.x,
+      y: boundary.position?.y ?? boundary.y,
+      width: boundary.position?.width ?? boundary.width,
+      height: boundary.position?.height ?? boundary.height,
       config: boundary.config || {}
     })
-    return {
-      id: created.id,
-      type: created.type as BoundaryType,
-      label: created.label,
-      points: created.points,
-      closed: created.closed,
-      style: created.style,
-      created: created.created,
-      position: created.x && created.y ? {
-        x: created.x,
-        y: created.y,
-        width: created.width || 200,
-        height: created.height || 200
-      } : undefined,
-      x: created.x,
-      y: created.y,
-      width: created.width,
-      height: created.height,
-      config: created.config || {}
-    }
+    return created
   }
 )
 
@@ -128,26 +172,7 @@ export const updateBoundaryAsync = createAsyncThunk(
   'boundaries/updateBoundary',
   async ({ id, updates }: { id: string; updates: Partial<Boundary> }) => {
     const updated = await boundariesApi.updateBoundary(id, updates)
-    return {
-      id: updated.id,
-      type: updated.type as BoundaryType,
-      label: updated.label,
-      points: updated.points,
-      closed: updated.closed,
-      style: updated.style,
-      created: updated.created,
-      position: updated.x && updated.y ? {
-        x: updated.x,
-        y: updated.y,
-        width: updated.width || 200,
-        height: updated.height || 200
-      } : undefined,
-      x: updated.x,
-      y: updated.y,
-      width: updated.width,
-      height: updated.height,
-      config: updated.config || {}
-    }
+    return updated
   }
 )
 
@@ -224,17 +249,22 @@ const boundariesSlice = createSlice({
     builder
       // Fetch boundaries
       .addCase(fetchBoundaries.fulfilled, (state, action) => {
-        state.items = action.payload
+        const existingById = new Map(state.items.map(boundary => [boundary.id, boundary]))
+        state.items = action.payload.map(response =>
+          mergeWithExistingBoundary(existingById.get(response.id), response)
+        )
       })
       // Create boundary
       .addCase(createBoundaryAsync.fulfilled, (state, action) => {
-        state.items.push(action.payload)
+        state.items.push(normalizeBoundary(action.payload))
       })
       // Update boundary
       .addCase(updateBoundaryAsync.fulfilled, (state, action) => {
         const index = state.items.findIndex(boundary => boundary.id === action.payload.id)
         if (index !== -1) {
-          state.items[index] = action.payload
+          state.items[index] = mergeWithExistingBoundary(state.items[index], action.payload)
+        } else {
+          state.items.push(normalizeBoundary(action.payload))
         }
       })
       // Delete boundary
