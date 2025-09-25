@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 import { useDispatch } from 'react-redux'
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 
-import DeviceList from '../components/DeviceList'
-import ConnectionList from '../components/ConnectionList'
+import TabbedSidebar from '../components/TabbedSidebar'
 import PropertyEditor from '../components/PropertyEditor'
 import TopologyCanvas from '../components/TopologyCanvas'
 import { useAutoSave } from '../hooks/useAutoSave'
@@ -22,16 +22,19 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard">
-      <section className="dashboard-column dashboard-column-left">
-        <DeviceList />
-        <ConnectionList />
-      </section>
-      <section className="dashboard-column dashboard-column-center">
-        <TopologyCanvas />
-      </section>
-      <aside className="dashboard-column dashboard-column-right">
-        <PropertyEditor />
-      </aside>
+      <PanelGroup direction="horizontal">
+        <Panel defaultSize={20} minSize={15} maxSize={35}>
+          <TabbedSidebar />
+        </Panel>
+        <PanelResizeHandle className="resize-handle" />
+        <Panel defaultSize={60} minSize={30}>
+          <TopologyCanvas />
+        </Panel>
+        <PanelResizeHandle className="resize-handle" />
+        <Panel defaultSize={20} minSize={15} maxSize={35}>
+          <PropertyEditor />
+        </Panel>
+      </PanelGroup>
     </div>
   )
 }

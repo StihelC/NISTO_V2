@@ -57,7 +57,7 @@ const ConnectionList = () => {
   }
 
   return (
-    <div className="panel">
+    <div className="connection-list">
       <header className="panel-header">
         <div>
           <h3>Connections</h3>

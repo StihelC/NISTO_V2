@@ -90,7 +90,7 @@ const DeviceList = () => {
   }
 
   return (
-    <div className="panel">
+    <div className="device-list">
       <header className="panel-header">
         <div>
           <h3>Devices</h3>
