@@ -1,0 +1,14 @@
+# DEVICES
+id,name,type,x_position,y_position,config_riskLevel,config_vulnerabilities,config_complianceStatus,config_monitoringEnabled,config_department,config_securityControls,config_availabilityImpact
+1,1,workstation,,,Very High,3,Non-Compliant,true,IT,"[{""id"":""PS-1"",""category"":""PS"",""name"":""Personnel Security"",""status"":""planned"",""notes"":""""}]",Low
+2,2,switch,,,Low,0,Compliant,true,Finance,,
+3,1231-1,switch,280.0,240.0,Moderate,1,Partially Compliant,false,HR,,
+4,1231-3,switch,520.0,240.0,High,5,Non-Compliant,true,Operations,,
+5,1231-2,switch,400.0,240.0,Very Low,0,Compliant,true,Sales,,
+6,1231-5,switch,400.0,360.0,Moderate,2,Compliant,false,Marketing,,
+7,1231-4,switch,280.0,360.0,High,4,Non-Compliant,true,Support,,
+
+
+# CONNECTIONS
+id,source_device_id,target_device_id,source_device_name,target_device_name,link_type,property_bandwidth,property_test
+1,1,2,1,2,ethernet,1Gbps,auto-created

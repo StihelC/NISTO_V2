@@ -1,0 +1,8 @@
+ID,Device Name,Device Type,X Coordinate,Y Coordinate,Total Connections,Connected To,Connected From,Risk Level,Vulnerability Count,Compliance Status,Department,Monitoring Enabled,Overall Risk Score,Network Risk Level,Availability Impact,Security Controls,Vulnerabilities
+1,1,workstation,,,1,2,,Very High,3,Non-Compliant,IT,true,Medium,Low,Low,"[{""id"":""PS-1"",""category"":""PS"",""name"":""Personnel Security"",""status"":""planned"",""notes"":""""}]",3
+2,2,switch,,,1,,1,Low,0,Compliant,Finance,true,Low,Low,,,0
+3,1231-1,switch,280.0,240.0,0,,,Moderate,1,Partially Compliant,HR,false,Medium,Low,,,1
+4,1231-3,switch,520.0,240.0,0,,,High,5,Non-Compliant,Operations,true,High,Low,,,5
+5,1231-2,switch,400.0,240.0,0,,,Very Low,0,Compliant,Sales,true,Low,Low,,,0
+6,1231-5,switch,400.0,360.0,0,,,Moderate,2,Compliant,Marketing,false,Medium,Low,,,2
+7,1231-4,switch,280.0,360.0,0,,,High,4,Non-Compliant,Support,true,High,Low,,,4

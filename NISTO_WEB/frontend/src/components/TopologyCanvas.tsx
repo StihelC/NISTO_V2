@@ -5,6 +5,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import { selectConnections, selectDevices, selectSelectedEntity } from '../store/selectors'
 import { selectEntity, toggleMultiSelect, clearMultiSelection } from '../store/uiSlice'
 import { updateDevice, updateDeviceAsync } from '../store/devicesSlice'
+import ExportModal from './ExportModal'
 
 const CANVAS_WIDTH = 4000
 const CANVAS_HEIGHT = 2400
@@ -63,6 +64,7 @@ const TopologyCanvas = () => {
     width: CANVAS_WIDTH,
     height: CANVAS_HEIGHT
   })
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false)
 
   // Calculate effective canvas dimensions based on zoom level and actual container size
   const effectiveCanvasWidth = useMemo(() => {
@@ -537,6 +539,13 @@ const TopologyCanvas = () => {
           >
             ⌂
           </button>
+          <button 
+            className="zoom-button" 
+            onClick={() => setIsExportModalOpen(true)}
+            title="Export Topology"
+          >
+            📤
+          </button>
         </div>
       </header>
       <div 
@@ -906,6 +915,12 @@ const TopologyCanvas = () => {
           })}
         </svg>
       </div>
+      
+      <ExportModal 
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        svgRef={svgRef}
+      />
     </div>
   )
 }

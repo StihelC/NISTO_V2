@@ -60,9 +60,6 @@ if (-not (Test-Path "frontend/package.json") -or -not (Test-Path "backend/requir
 # Track test results
 $frontendPassed = $false
 $backendPassed = $false
-$totalTests = 0
-$passedTests = 0
-$failedTests = 0
 
 Write-Header "NISTO Web Application Test Suite"
 Write-Info "Target: $Target"
@@ -71,7 +68,7 @@ Write-Info "Coverage: $Coverage"
 Write-Info "Verbose: $Verbose"
 
 # Function to run frontend tests
-function Run-FrontendTests {
+function Start-FrontendTests {
     Write-Header "Running Frontend Tests (React + TypeScript)"
     
     if (-not (Test-Path "frontend/node_modules")) {
@@ -102,7 +99,7 @@ function Run-FrontendTests {
         
         Write-Info "Running: $testCommand"
         
-        $result = Invoke-Expression $testCommand
+        Invoke-Expression $testCommand
         $exitCode = $LASTEXITCODE
         
         if ($exitCode -eq 0) {
@@ -126,7 +123,7 @@ function Run-FrontendTests {
 }
 
 # Function to run backend tests
-function Run-BackendTests {
+function Start-BackendTests {
     Write-Header "Running Backend Tests (FastAPI + Python)"
     
     # Check if virtual environment exists
@@ -172,7 +169,7 @@ function Run-BackendTests {
         
         Write-Info "Running: $testCommand"
         
-        $result = Invoke-Expression $testCommand
+        Invoke-Expression $testCommand
         $exitCode = $LASTEXITCODE
         
         if ($exitCode -eq 0) {
@@ -205,16 +202,16 @@ $startTime = Get-Date
 try {
     switch ($Target.ToLower()) {
         "frontend" {
-            $exitCode = Run-FrontendTests
+            $exitCode = Start-FrontendTests
         }
         "backend" {
-            $exitCode = Run-BackendTests
+            $exitCode = Start-BackendTests
         }
         "all" {
             Write-Info "Running all tests..."
             
-            $frontendExitCode = Run-FrontendTests
-            $backendExitCode = Run-BackendTests
+            $frontendExitCode = Start-FrontendTests
+            $backendExitCode = Start-BackendTests
             
             # Overall exit code is 0 only if both pass
             $exitCode = [Math]::Max($frontendExitCode, $backendExitCode)
