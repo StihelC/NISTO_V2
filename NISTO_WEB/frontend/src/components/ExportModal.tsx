@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { useSelector } from 'react-redux'
 import { downloadTopologyCSV, downloadTopologyExcel, exportTopologyImage, exportTopologySVG } from '../api/export'
+import { selectBoundaries } from '../store/boundariesSlice'
 
 interface ExportModalProps {
   isOpen: boolean
@@ -8,6 +10,7 @@ interface ExportModalProps {
 }
 
 const ExportModal = ({ isOpen, onClose, svgRef }: ExportModalProps) => {
+  const boundaries = useSelector(selectBoundaries)
   const [isExporting, setIsExporting] = useState(false)
   const [exportStatus, setExportStatus] = useState<string | null>(null)
 
@@ -59,7 +62,7 @@ const ExportModal = ({ isOpen, onClose, svgRef }: ExportModalProps) => {
     setExportStatus('Exporting PNG image...')
     try {
       const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')
-      await exportTopologyImage(svgRef.current, `topology-${timestamp}.png`)
+      await exportTopologyImage(svgRef.current, `topology-${timestamp}.png`, boundaries)
       setExportStatus('PNG exported successfully!')
       setTimeout(() => {
         setExportStatus(null)

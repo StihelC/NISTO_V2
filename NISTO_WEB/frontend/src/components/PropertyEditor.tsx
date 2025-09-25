@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux'
 
 import { updateDevice, updateDeviceAsync, deleteDeviceAsync } from '../store/devicesSlice'
 import { updateConnection, createConnectionAsync, fetchConnections } from '../store/connectionsSlice'
+import { updateBoundaryAsync, deleteBoundaryAsync, BOUNDARY_LABELS } from '../store/boundariesSlice'
 import { selectEntity } from '../store/uiSlice'
 import type { DeviceType, RootState } from '../store'
 import { DEVICE_CATEGORIES, DEVICE_LABELS } from '../constants/deviceTypes'
@@ -50,6 +51,7 @@ const PropertyEditor = () => {
   const multiSelected = useSelector((state: RootState) => state.ui.multiSelected)
   const devices = useSelector((state: RootState) => state.devices.items)
   const connections = useSelector((state: RootState) => state.connections.items)
+  const boundaries = useSelector((state: RootState) => state.boundaries.items)
   
   // Move useState to top level to follow Rules of Hooks
   const [activeTab, setActiveTab] = useState<'general' | 'security' | 'controls' | 'risk'>('general')
@@ -58,11 +60,24 @@ const PropertyEditor = () => {
   const device = selected?.kind === 'device' ? devices.find((item) => item.id === selected.id) : null
   const connection =
     selected?.kind === 'connection' ? connections.find((item) => item.id === selected.id) : null
+  const boundary = selected?.kind === 'boundary' ? boundaries.find((item) => item.id === selected.id) : null
   
   // Handle multi-selected devices
   const multiSelectedDevices = multiSelected?.kind === 'device' 
     ? devices.filter(device => multiSelected.ids.includes(device.id))
     : []
+
+  // Debug boundary selection
+  console.log('🔍 PropertyEditor render - selected:', selected)
+  console.log('🔍 PropertyEditor render - boundaries.length:', boundaries.length)
+  if (selected?.kind === 'boundary') {
+    console.log('🎯 PropertyEditor sees boundary selection:', selected)
+    console.log('🎯 Found boundary object:', boundary)
+    console.log('🎯 boundary config:', boundary?.config)
+    console.log('🎯 device:', device)
+    console.log('🎯 connection:', connection)
+    console.log('🎯 multiSelectedDevices.length:', multiSelectedDevices.length)
+  }
 
   // Auto-connect functions
   const calculateDistance = (device1: any, device2: any) => {
@@ -172,10 +187,10 @@ const PropertyEditor = () => {
   }
 
   useEffect(() => {
-    if (selected && !device && !connection) {
+    if (selected && !device && !connection && !boundary) {
       dispatch(selectEntity(null))
     }
-  }, [selected, device, connection, dispatch])
+  }, [selected, device, connection, boundary, dispatch])
 
   // Reset tab to 'general' when switching devices
   useEffect(() => {
@@ -186,50 +201,323 @@ const PropertyEditor = () => {
 
   // Show multi-selection editor if multiple devices are selected
   if (multiSelected?.kind === 'device' && multiSelectedDevices.length > 0) {
+    // Multi-device bulk editing handler
+    const handleBulkChange = (field: string, value: any) => {
+      multiSelectedDevices.forEach(device => {
+        if (field === 'type') {
+          dispatch(updateDeviceAsync({ id: device.id, type: value as DeviceType }))
+        } else {
+          const currentConfig = device.config || {}
+          const updatedConfig = { ...currentConfig, [field]: value }
+          dispatch(updateDeviceAsync({ id: device.id, config: updatedConfig }))
+        }
+      })
+    }
+
     return (
       <div className="panel">
         <header className="panel-header">
-          <h3>Properties ({multiSelectedDevices.length} devices selected)</h3>
+          <h3>Bulk Properties ({multiSelectedDevices.length} devices)</h3>
         </header>
+        <div className="property-tabs">
+          <button 
+            className={`tab ${activeTab === 'general' ? 'active' : ''}`}
+            onClick={() => setActiveTab('general')}
+          >
+            General
+          </button>
+          <button 
+            className={`tab ${activeTab === 'security' ? 'active' : ''}`}
+            onClick={() => setActiveTab('security')}
+          >
+            Security
+          </button>
+          <button 
+            className={`tab ${activeTab === 'risk' ? 'active' : ''}`}
+            onClick={() => setActiveTab('risk')}
+          >
+            Risk
+          </button>
+          <button 
+            className={`tab ${activeTab === 'connections' ? 'active' : ''}`}
+            onClick={() => setActiveTab('connections')}
+          >
+            Connections
+          </button>
+        </div>
+        
         <div className="panel-content">
           <div className="multi-edit-info">
-            <p>Editing {multiSelectedDevices.length} devices:</p>
-            <ul className="selected-devices-list">
+            <p><strong>Bulk editing {multiSelectedDevices.length} devices:</strong></p>
+            <div className="selected-devices-grid">
               {multiSelectedDevices.map(device => (
-                <li key={device.id}>
-                  <DeviceIcon deviceType={device.type} size={14} className="device-icon" />
-                  {device.name} ({DEVICE_LABELS[device.type] || device.type})
-                </li>
+                <div key={device.id} className="selected-device-item">
+                  <DeviceIcon deviceType={device.type} size={16} className="device-icon" />
+                  <span className="device-name">{device.name}</span>
+                  <span className="device-type-label">{DEVICE_LABELS[device.type] || device.type}</span>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
-          
-          <div className="form">
-            <label className="form-field">
-              <span>Type (applies to all selected)</span>
-              <select 
-                value=""
-                onChange={(e) => {
-                  if (e.target.value) {
-                    multiSelectedDevices.forEach(device => {
-                      dispatch(updateDeviceAsync({ id: device.id, type: e.target.value as DeviceType }))
-                    })
-                  }
-                }}
-              >
-                <option value="">-- Change Type --</option>
-                <option value="switch">Switch</option>
-                <option value="router">Router</option>
-                <option value="firewall">Firewall</option>
-                <option value="server">Server</option>
-                <option value="workstation">Workstation</option>
-                <option value="generic">Generic</option>
-              </select>
-            </label>
 
-            <div className="connection-section">
-              <h4>Auto-Connect Devices</h4>
-              <p className="connection-hint">Create connections between selected devices:</p>
+          {activeTab === 'general' && (
+            <div className="property-section">
+              <h4>General Properties (applies to all selected)</h4>
+              
+              <label className="form-field">
+                <span>Device Type</span>
+                <select 
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleBulkChange('type', e.target.value)
+                      e.target.value = '' // Reset dropdown
+                    }
+                  }}
+                >
+                  <option value="">-- Change Type for All --</option>
+                  {Object.entries(DEVICE_CATEGORIES).map(([category, deviceTypes]) => (
+                    <optgroup key={category} label={category}>
+                      {deviceTypes.map((deviceType) => (
+                        <option key={deviceType} value={deviceType}>
+                          {DEVICE_LABELS[deviceType]}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-field">
+                <span>System Categorization</span>
+                <select 
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleBulkChange('categorizationType', e.target.value)
+                      e.target.value = ''
+                    }
+                  }}
+                >
+                  <option value="">-- Set for All --</option>
+                  {CATEGORIZATION_TYPES.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+
+          {activeTab === 'security' && (
+            <div className="property-section">
+              <h4>Security Configuration (applies to all selected)</h4>
+              
+              <label className="form-field">
+                <span>Patch Level</span>
+                <input 
+                  type="text"
+                  placeholder="e.g., Current, 30 days behind - applies to all"
+                  onBlur={(e) => {
+                    if (e.target.value) {
+                      handleBulkChange('patchLevel', e.target.value)
+                      e.target.value = ''
+                    }
+                  }}
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Encryption Status</span>
+                <select 
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleBulkChange('encryptionStatus', e.target.value)
+                      e.target.value = ''
+                    }
+                  }}
+                >
+                  <option value="">-- Set for All --</option>
+                  <option value="Not Configured">Not Configured</option>
+                  <option value="Configured">Configured</option>
+                  <option value="Full Disk Encryption">Full Disk Encryption</option>
+                  <option value="Transit Only">Transit Only</option>
+                  <option value="At Rest Only">At Rest Only</option>
+                </select>
+              </label>
+
+              <label className="form-field">
+                <span>Access Control Policy</span>
+                <select 
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleBulkChange('accessControlPolicy', e.target.value)
+                      e.target.value = ''
+                    }
+                  }}
+                >
+                  <option value="">-- Set for All --</option>
+                  <option value="Standard">Standard</option>
+                  <option value="Privileged">Privileged</option>
+                  <option value="High Security">High Security</option>
+                  <option value="Guest">Guest</option>
+                </select>
+              </label>
+
+              <div className="bulk-checkbox-actions">
+                <button 
+                  type="button" 
+                  className="btn btn-secondary"
+                  onClick={() => handleBulkChange('monitoringEnabled', 'true')}
+                >
+                  Enable Monitoring for All
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary"
+                  onClick={() => handleBulkChange('monitoringEnabled', 'false')}
+                >
+                  Disable Monitoring for All
+                </button>
+              </div>
+
+              <label className="form-field">
+                <span>Backup Policy</span>
+                <select 
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleBulkChange('backupPolicy', e.target.value)
+                      e.target.value = ''
+                    }
+                  }}
+                >
+                  <option value="">-- Set for All --</option>
+                  <option value="Standard">Standard (Daily)</option>
+                  <option value="Critical">Critical (Real-time)</option>
+                  <option value="Weekly">Weekly</option>
+                  <option value="None">None</option>
+                </select>
+              </label>
+            </div>
+          )}
+
+          {activeTab === 'risk' && (
+            <div className="property-section">
+              <h4>Risk Assessment (applies to all selected)</h4>
+              
+              <label className="form-field">
+                <span>Overall Risk Level</span>
+                <select 
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleBulkChange('riskLevel', e.target.value)
+                      e.target.value = ''
+                    }
+                  }}
+                >
+                  <option value="">-- Set for All --</option>
+                  {RISK_LEVELS.map(level => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="impact-levels">
+                <h5>Impact Levels (FIPS 199)</h5>
+                <label className="form-field">
+                  <span>Confidentiality Impact</span>
+                  <select 
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleBulkChange('confidentialityImpact', e.target.value)
+                        e.target.value = ''
+                      }
+                    }}
+                  >
+                    <option value="">-- Set for All --</option>
+                    {IMPACT_LEVELS.map(level => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Integrity Impact</span>
+                  <select 
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleBulkChange('integrityImpact', e.target.value)
+                        e.target.value = ''
+                      }
+                    }}
+                  >
+                    <option value="">-- Set for All --</option>
+                    {IMPACT_LEVELS.map(level => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Availability Impact</span>
+                  <select 
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleBulkChange('availabilityImpact', e.target.value)
+                        e.target.value = ''
+                      }
+                    }}
+                  >
+                    <option value="">-- Set for All --</option>
+                    {IMPACT_LEVELS.map(level => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="form-field">
+                <span>Compliance Status</span>
+                <select 
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleBulkChange('complianceStatus', e.target.value)
+                      e.target.value = ''
+                    }
+                  }}
+                >
+                  <option value="">-- Set for All --</option>
+                  {COMPLIANCE_STATUS.map(status => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-field">
+                <span>Known Vulnerabilities (number)</span>
+                <input 
+                  type="number"
+                  min="0"
+                  placeholder="Set vulnerability count for all"
+                  onBlur={(e) => {
+                    if (e.target.value) {
+                      handleBulkChange('vulnerabilities', e.target.value)
+                      e.target.value = ''
+                    }
+                  }}
+                />
+              </label>
+            </div>
+          )}
+
+          {activeTab === 'connections' && (
+            <div className="property-section">
+              <h4>Auto-Connect Selected Devices</h4>
               
               <label className="form-field">
                 <span>Connection Type</span>
@@ -299,35 +587,35 @@ const PropertyEditor = () => {
                 </button>
               </div>
             </div>
-            
-            <div className="form-actions">
-              <button 
-                type="button" 
-                className="btn btn-danger" 
-                onClick={() => {
-                  if (window.confirm(`Delete ${multiSelectedDevices.length} selected devices?`)) {
-                    multiSelectedDevices.forEach(device => {
-                      dispatch(deleteDeviceAsync(device.id))
-                    })
-                  }
-                }}
-              >
-                Delete Selected Devices
-              </button>
-            </div>
+          )}
+
+          <div className="form-actions">
+            <button 
+              type="button" 
+              className="btn btn-danger" 
+              onClick={() => {
+                if (window.confirm(`Delete ${multiSelectedDevices.length} selected devices?`)) {
+                  multiSelectedDevices.forEach(device => {
+                    dispatch(deleteDeviceAsync(device.id))
+                  })
+                }
+              }}
+            >
+              Delete All Selected ({multiSelectedDevices.length})
+            </button>
           </div>
         </div>
       </div>
     )
   }
 
-  if (!selected || (!device && !connection)) {
+  if (!selected || (!device && !connection && !boundary)) {
     return (
       <div className="panel">
         <header className="panel-header">
           <h3>Properties</h3>
         </header>
-        <p className="panel-placeholder">Select a device or connection, or Ctrl+click multiple devices.</p>
+        <p className="panel-placeholder">Select a device, connection, or boundary, or Ctrl+click multiple devices.</p>
       </div>
     )
   }
@@ -625,12 +913,13 @@ const PropertyEditor = () => {
     )
   }
 
-  const handleConnectionChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = event.target
-    dispatch(updateConnection({ id: connection!.id, [name]: value }))
-  }
+  if (connection) {
+    const handleConnectionChange = (event: ChangeEvent<HTMLInputElement>) => {
+      const { name, value } = event.target
+      dispatch(updateConnection({ id: connection.id, [name]: value }))
+    }
 
-  return (
+    return (
     <div className="panel">
       <header className="panel-header">
         <h3>Connection Properties</h3>
@@ -640,7 +929,7 @@ const PropertyEditor = () => {
           <span>Source</span>
           <input
             name="sourceDeviceId"
-            value={connection!.sourceDeviceId}
+            value={connection.sourceDeviceId}
             onChange={handleConnectionChange}
           />
         </label>
@@ -648,17 +937,390 @@ const PropertyEditor = () => {
           <span>Target</span>
           <input
             name="targetDeviceId"
-            value={connection!.targetDeviceId}
+            value={connection.targetDeviceId}
             onChange={handleConnectionChange}
           />
         </label>
         <label className="form-field">
           <span>Link type</span>
-          <input name="linkType" value={connection!.linkType} onChange={handleConnectionChange} />
+          <input name="linkType" value={connection.linkType} onChange={handleConnectionChange} />
         </label>
       </div>
     </div>
   )
+  }
+
+  // Boundary properties
+  if (boundary) {
+    // Parse security config from boundary.config 
+    const boundaryConfig = {
+      description: boundary.config?.description || '',
+      owner: boundary.config?.owner || '',
+      criticality: boundary.config?.criticality || 'Medium',
+      accessLevel: boundary.config?.accessLevel || 'Internal',
+      complianceFramework: boundary.config?.complianceFramework || '',
+      dataClassification: boundary.config?.dataClassification || 'Internal',
+      riskLevel: boundary.config?.riskLevel || 'Moderate',
+      confidentialityImpact: boundary.config?.confidentialityImpact || 'Moderate',
+      integrityImpact: boundary.config?.integrityImpact || 'Moderate',
+      availabilityImpact: boundary.config?.availabilityImpact || 'Moderate',
+      complianceStatus: boundary.config?.complianceStatus || 'Not Assessed',
+      authorizer: boundary.config?.authorizer || '',
+      lastAssessment: boundary.config?.lastAssessment || '',
+      nextAssessment: boundary.config?.nextAssessment || '',
+      securityControls: boundary.config?.securityControls ? JSON.parse(boundary.config.securityControls) : [],
+    }
+
+    const handleBoundaryChange = (event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+      const { name, value } = event.target
+      
+      if (name === 'label') {
+        dispatch(updateBoundaryAsync({ id: boundary.id, updates: { label: value } }))
+      } else if (name === 'color') {
+        dispatch(updateBoundaryAsync({ 
+          id: boundary.id, 
+          updates: { style: { ...boundary.style, color: value } }
+        }))
+      } else if (name === 'strokeWidth') {
+        dispatch(updateBoundaryAsync({ 
+          id: boundary.id, 
+          updates: { style: { ...boundary.style, strokeWidth: parseInt(value) || 1 } }
+        }))
+      } else if (name === 'fillOpacity') {
+        dispatch(updateBoundaryAsync({ 
+          id: boundary.id, 
+          updates: { style: { ...boundary.style, fillOpacity: parseFloat(value) || 0 } }
+        }))
+      } else if (name === 'dashArray') {
+        dispatch(updateBoundaryAsync({ 
+          id: boundary.id, 
+          updates: { style: { ...boundary.style, dashArray: value || 'none' } }
+        }))
+      } else if (name === 'x' || name === 'y' || name === 'width' || name === 'height') {
+        const numValue = parseFloat(value) || 0
+        const currentPosition = boundary.position || { x: 0, y: 0, width: 200, height: 200 }
+        dispatch(updateBoundaryAsync({ 
+          id: boundary.id, 
+          updates: { 
+            position: { ...currentPosition, [name]: numValue },
+            [name]: numValue // Also update the individual field for backend compatibility
+          }
+        }))
+      } else {
+        // Handle config properties
+        const newConfig = { ...boundary.config, [name]: value }
+        dispatch(updateBoundaryAsync({ 
+          id: boundary.id, 
+          updates: { config: newConfig }
+        }))
+      }
+    }
+
+    const handleDeleteBoundary = () => {
+      if (window.confirm('Are you sure you want to delete this boundary?')) {
+        dispatch(deleteBoundaryAsync(boundary.id))
+        dispatch(selectEntity(null))
+      }
+    }
+
+    return (
+      <div className="panel">
+        <header className="panel-header">
+          <h3>Boundary Properties</h3>
+        </header>
+        <div className="property-tabs">
+          <button 
+            className={`tab ${activeTab === 'general' ? 'active' : ''}`}
+            onClick={() => setActiveTab('general')}
+          >
+            General
+          </button>
+          <button 
+            className={`tab ${activeTab === 'security' ? 'active' : ''}`}
+            onClick={() => setActiveTab('security')}
+          >
+            Security
+          </button>
+          <button 
+            className={`tab ${activeTab === 'risk' ? 'active' : ''}`}
+            onClick={() => setActiveTab('risk')}
+          >
+            Risk
+          </button>
+        </div>
+        <div className="panel-content">
+          {activeTab === 'general' && (
+            <>
+              <div className="boundary-info">
+                <p><strong>Type:</strong> {BOUNDARY_LABELS[boundary.type]}</p>
+                <p><strong>Created:</strong> {new Date(boundary.created).toLocaleDateString()}</p>
+                <p><strong>Points:</strong> {boundary.points.length}</p>
+              </div>
+
+              <label className="form-field">
+                <span>Label</span>
+                <input
+                  name="label"
+                  value={boundary.label}
+                  onChange={handleBoundaryChange}
+                  placeholder="Boundary label"
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Description</span>
+                <textarea
+                  name="description"
+                  value={boundaryConfig.description}
+                  onChange={handleBoundaryChange}
+                  placeholder="Boundary description and purpose"
+                  rows={3}
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Owner</span>
+                <input
+                  name="owner"
+                  value={boundaryConfig.owner}
+                  onChange={handleBoundaryChange}
+                  placeholder="Boundary owner or responsible party"
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Criticality</span>
+                <select name="criticality" value={boundaryConfig.criticality} onChange={handleBoundaryChange}>
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                  <option value="Critical">Critical</option>
+                </select>
+              </label>
+
+              <label className="form-field">
+                <span>Access Level</span>
+                <select name="accessLevel" value={boundaryConfig.accessLevel} onChange={handleBoundaryChange}>
+                  <option value="Public">Public</option>
+                  <option value="Internal">Internal</option>
+                  <option value="Confidential">Confidential</option>
+                  <option value="Restricted">Restricted</option>
+                  <option value="Top Secret">Top Secret</option>
+                </select>
+              </label>
+
+              <h4>Position & Size</h4>
+              <div className="position-grid">
+                <label className="form-field">
+                  <span>X Position</span>
+                  <input
+                    type="number"
+                    name="x"
+                    value={boundary.position?.x || boundary.x || 0}
+                    onChange={handleBoundaryChange}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Y Position</span>
+                  <input
+                    type="number"
+                    name="y"
+                    value={boundary.position?.y || boundary.y || 0}
+                    onChange={handleBoundaryChange}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Width</span>
+                  <input
+                    type="number"
+                    name="width"
+                    value={boundary.position?.width || boundary.width || 200}
+                    onChange={handleBoundaryChange}
+                    min="50"
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Height</span>
+                  <input
+                    type="number"
+                    name="height"
+                    value={boundary.position?.height || boundary.height || 200}
+                    onChange={handleBoundaryChange}
+                    min="50"
+                  />
+                </label>
+              </div>
+
+              <h4>Appearance</h4>
+              <label className="form-field">
+                <span>Border Color</span>
+                <input
+                  type="color"
+                  name="color"
+                  value={boundary.style.color}
+                  onChange={handleBoundaryChange}
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Border Width</span>
+                <input
+                  type="number"
+                  name="strokeWidth"
+                  value={boundary.style.strokeWidth}
+                  onChange={handleBoundaryChange}
+                  min="1"
+                  max="10"
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Fill Opacity</span>
+                <input
+                  type="range"
+                  name="fillOpacity"
+                  value={boundary.style.fillOpacity || 0}
+                  onChange={handleBoundaryChange}
+                  min="0"
+                  max="1"
+                  step="0.1"
+                />
+                <span>{Math.round((boundary.style.fillOpacity || 0) * 100)}%</span>
+              </label>
+
+              <label className="form-field">
+                <span>Border Style</span>
+                <select name="dashArray" value={boundary.style.dashArray || 'none'} onChange={handleBoundaryChange}>
+                  <option value="none">Solid</option>
+                  <option value="5,5">Dashed</option>
+                  <option value="3,3">Dotted</option>
+                  <option value="10,5">Long Dash</option>
+                  <option value="8,4,2,4">Dash-Dot</option>
+                </select>
+              </label>
+
+              <button 
+                className="danger-button" 
+                onClick={handleDeleteBoundary}
+                style={{ marginTop: '1rem' }}
+              >
+                Delete Boundary
+              </button>
+            </>
+          )}
+
+          {activeTab === 'security' && (
+            <div className="property-section">
+              <h4>Security Properties</h4>
+              
+              <label className="form-field">
+                <span>Data Classification</span>
+                <select name="dataClassification" value={boundaryConfig.dataClassification} onChange={handleBoundaryChange}>
+                  <option value="Public">Public</option>
+                  <option value="Internal">Internal</option>
+                  <option value="Confidential">Confidential</option>
+                  <option value="Restricted">Restricted</option>
+                  <option value="Top Secret">Top Secret</option>
+                </select>
+              </label>
+
+              <label className="form-field">
+                <span>Compliance Framework</span>
+                <input
+                  name="complianceFramework"
+                  value={boundaryConfig.complianceFramework}
+                  onChange={handleBoundaryChange}
+                  placeholder="e.g., NIST SP 800-53, ISO 27001, FedRAMP"
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Authorizer</span>
+                <input
+                  name="authorizer"
+                  value={boundaryConfig.authorizer}
+                  onChange={handleBoundaryChange}
+                  placeholder="Authorizing Official"
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Last Assessment</span>
+                <input
+                  type="date"
+                  name="lastAssessment"
+                  value={boundaryConfig.lastAssessment}
+                  onChange={handleBoundaryChange}
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Next Assessment</span>
+                <input
+                  type="date"
+                  name="nextAssessment"
+                  value={boundaryConfig.nextAssessment}
+                  onChange={handleBoundaryChange}
+                />
+              </label>
+            </div>
+          )}
+
+          {activeTab === 'risk' && (
+            <div className="property-section">
+              <h4>Risk Assessment</h4>
+              
+              <label className="form-field">
+                <span>Overall Risk Level</span>
+                <select name="riskLevel" value={boundaryConfig.riskLevel} onChange={handleBoundaryChange}>
+                  {RISK_LEVELS.map(level => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="impact-levels">
+                <h5>Impact Levels (FIPS 199)</h5>
+                <label className="form-field">
+                  <span>Confidentiality Impact</span>
+                  <select name="confidentialityImpact" value={boundaryConfig.confidentialityImpact} onChange={handleBoundaryChange}>
+                    {IMPACT_LEVELS.map(level => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Integrity Impact</span>
+                  <select name="integrityImpact" value={boundaryConfig.integrityImpact} onChange={handleBoundaryChange}>
+                    {IMPACT_LEVELS.map(level => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Availability Impact</span>
+                  <select name="availabilityImpact" value={boundaryConfig.availabilityImpact} onChange={handleBoundaryChange}>
+                    {IMPACT_LEVELS.map(level => (
+                      <option key={level} value={level}>{level}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="form-field">
+                <span>Compliance Status</span>
+                <select name="complianceStatus" value={boundaryConfig.complianceStatus} onChange={handleBoundaryChange}>
+                  {COMPLIANCE_STATUS.map(status => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 }
 
 export default PropertyEditor

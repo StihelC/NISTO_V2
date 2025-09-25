@@ -53,13 +53,47 @@ export interface Connection {
   properties: Record<string, string>
 }
 
+export type BoundaryType = 'ato' | 'building' | 'network_segment' | 'security_zone' | 'physical_location' | 'logical_group'
+
+export interface Boundary {
+  id: string
+  type: BoundaryType
+  label: string
+  points: Array<{ x: number; y: number }>
+  closed: boolean
+  style: {
+    color: string
+    strokeWidth: number
+    dashArray?: string
+    fill?: string
+    fillOpacity?: number
+  }
+  created: string
+  // New device-like properties
+  position?: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+  config: Record<string, string>
+}
+
 export interface ConnectionsState {
   items: Connection[]
+}
+
+export interface BoundariesState {
+  items: Boundary[]
+  isDrawing: boolean
+  currentBoundaryType: BoundaryType | null
+  drawingPoints: Array<{ x: number; y: number }>
 }
 
 export type SelectedEntity =
   | { kind: 'device'; id: string }
   | { kind: 'connection'; id: string }
+  | { kind: 'boundary'; id: string }
   | null
 
 export interface MultiSelection {
@@ -90,6 +124,7 @@ export interface ProjectsState {
 export interface RootState {
   devices: DevicesState
   connections: ConnectionsState
+  boundaries: BoundariesState
   ui: UiState
   projects: ProjectsState
 }

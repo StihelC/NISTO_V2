@@ -59,6 +59,24 @@ class Connection(Base):
     )
 
 
+class Boundary(Base):
+    __tablename__ = "boundaries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)  # UUID from frontend
+    type: Mapped[str] = mapped_column(String, nullable=False)  # ato, building, etc.
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    points: Mapped[list] = mapped_column(JSON, nullable=False)  # Array of {x, y} points
+    closed: Mapped[bool] = mapped_column(Integer, default=True)
+    style: Mapped[Dict] = mapped_column(JSON, nullable=False)  # Style properties
+    created: Mapped[str] = mapped_column(String, nullable=False)  # ISO date string
+    # New device-like properties
+    x: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Position x
+    y: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Position y
+    width: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Boundary width
+    height: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Boundary height
+    config: Mapped[Dict[str, str]] = mapped_column(JSON, default=dict)  # Custom properties
+
+
 class Project(Base):
     __tablename__ = "projects"
 

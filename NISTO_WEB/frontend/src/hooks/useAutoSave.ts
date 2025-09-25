@@ -1,14 +1,22 @@
 import { useEffect, useRef } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
+import { createSelector } from '@reduxjs/toolkit'
 import { autoSaveProject, type AppDispatch, type RootState } from '../store'
+
+// Memoized selector to prevent unnecessary rerenders
+const selectDevicesConnectionsAndBoundaries = createSelector(
+  [
+    (state: RootState) => state.devices.items, 
+    (state: RootState) => state.connections.items,
+    (state: RootState) => state.boundaries.items
+  ],
+  (devices, connections, boundaries) => ({ devices, connections, boundaries })
+)
 
 export const useAutoSave = (intervalMs: number = 30000) => {
   const dispatch = useDispatch<AppDispatch>()
-  const { devices, connections } = useSelector((state: RootState) => ({
-    devices: state.devices.items,
-    connections: state.connections.items,
-  }))
-  const { autoSaving } = useSelector((state: RootState) => state.projects)
+  const { devices, connections, boundaries } = useSelector(selectDevicesConnectionsAndBoundaries)
+  const autoSaving = useSelector((state: RootState) => state.projects.autoSaving)
   
   const lastSavedState = useRef<string>('')
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null)
@@ -16,7 +24,7 @@ export const useAutoSave = (intervalMs: number = 30000) => {
 
   // Calculate current state hash for comparison
   const getCurrentStateHash = () => {
-    const state = { devices, connections }
+    const state = { devices, connections, boundaries }
     return JSON.stringify(state)
   }
 
@@ -65,12 +73,12 @@ export const useAutoSave = (intervalMs: number = 30000) => {
   // Monitor state changes
   useEffect(() => {
     scheduleAutoSave()
-  }, [devices, connections])
+  }, [devices, connections, boundaries])
 
   // Initial state save on mount (if there's data)
   useEffect(() => {
     const currentStateHash = getCurrentStateHash()
-    if (devices.length > 0 || connections.length > 0) {
+    if (devices.length > 0 || connections.length > 0 || boundaries.length > 0) {
       lastSavedState.current = currentStateHash
     }
   }, [])

@@ -3,21 +3,38 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
 import { selectConnections, selectDevices, selectSelectedEntity } from '../store/selectors'
-import { selectEntity, toggleMultiSelect, clearMultiSelection } from '../store/uiSlice'
-import { updateDevice, updateDeviceAsync } from '../store/devicesSlice'
+import { resetConnections } from '../store/connectionsSlice'
+import { selectEntity, toggleMultiSelect, clearMultiSelection, resetUi } from '../store/uiSlice'
+import { updateDevice, updateDeviceAsync, resetDevices } from '../store/devicesSlice'
+import { 
+  startDrawing, 
+  addDrawingPoint, 
+  finishDrawing, 
+  cancelDrawing,
+  clearAllBoundaries,
+  createBoundaryAsync,
+  fetchBoundaries,
+  selectBoundaries,
+  selectIsDrawingBoundary,
+  selectCurrentBoundaryType,
+  selectDrawingPoints,
+  updateBoundary,
+  BOUNDARY_LABELS,
+  BOUNDARY_STYLES
+} from '../store/boundariesSlice'
 import { DEVICE_LABELS } from '../constants/deviceTypes'
 import DeviceIcon from './DeviceIcon'
 import ExportModal from './ExportModal'
 
-const CANVAS_WIDTH = 4000
-const CANVAS_HEIGHT = 2400
+const CANVAS_WIDTH = 1920
+const CANVAS_HEIGHT = 1080
 const NODE_RADIUS = 36
 const LABEL_PADDING = 6
 const LABEL_HEIGHT = 22
 const ESTIMATED_CHAR_WIDTH = 7
-const MIN_ZOOM = 1.0
-const MAX_ZOOM = 3
-const ZOOM_STEP = 0.05
+const MIN_ZOOM = 0.5
+const MAX_ZOOM = 2.0
+const ZOOM_STEP = 0.1
 
 interface DragState {
   id: string
@@ -41,12 +58,6 @@ interface GroupDragState {
   hasMoved: boolean
 }
 
-interface PanState {
-  isPanning: boolean
-  startX: number
-  startY: number
-  startPanOffset: { x: number; y: number }
-}
 
 const TopologyCanvas = () => {
   const dispatch = useDispatch()
@@ -54,19 +65,27 @@ const TopologyCanvas = () => {
   const connections = useSelector(selectConnections)
   const selected = useSelector(selectSelectedEntity)
   const multiSelected = useSelector((state: any) => state.ui.multiSelected)
+  
+  // Boundary state
+  const boundaries = useSelector(selectBoundaries)
+  const isDrawingBoundary = useSelector(selectIsDrawingBoundary)
+  const currentBoundaryType = useSelector(selectCurrentBoundaryType)
+  const drawingPoints = useSelector(selectDrawingPoints)
 
   const svgRef = useRef<SVGSVGElement | null>(null)
   const canvasAreaRef = useRef<HTMLDivElement | null>(null)
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [groupDragState, setGroupDragState] = useState<GroupDragState | null>(null)
-  const [panState, setPanState] = useState<PanState | null>(null)
   const [zoom, setZoom] = useState(1)
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
+  const [zoomCenter, setZoomCenter] = useState({ x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 })
   const [containerDimensions, setContainerDimensions] = useState({
     width: CANVAS_WIDTH,
     height: CANVAS_HEIGHT
   })
   const [isExportModalOpen, setIsExportModalOpen] = useState(false)
+  const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null)
+  const [isMouseDown, setIsMouseDown] = useState(false)
+  const [mouseDownPosition, setMouseDownPosition] = useState<{ x: number; y: number } | null>(null)
 
   // Calculate effective canvas dimensions based on zoom level and actual container size
   const effectiveCanvasWidth = useMemo(() => {
@@ -85,52 +104,22 @@ const TopologyCanvas = () => {
 
   // Calculate viewBox dimensions to center the large canvas in the panel
   const viewBoxDimensions = useMemo(() => {
-    if (canvasAreaRef.current) {
-      const rect = canvasAreaRef.current.getBoundingClientRect()
-      const panelWidth = rect.width || 800
-      const panelHeight = rect.height || 600
-      
-      if (zoom < 0.9) {
-        // When significantly zoomed out, show the expanded canvas area
-        const viewBoxWidth = effectiveCanvasWidth
-        const viewBoxHeight = effectiveCanvasHeight
-        // Center the expanded view
-        const offsetX = (effectiveCanvasWidth - CANVAS_WIDTH) / 2
-        const offsetY = (effectiveCanvasHeight - CANVAS_HEIGHT) / 2
-        return {
-          x: panOffset.x - offsetX,
-          y: panOffset.y - offsetY,
-          width: viewBoxWidth,
-          height: viewBoxHeight
-        }
-      } else {
-        // Normal zoom: center the large canvas in the panel
-        const viewBoxWidth = effectiveCanvasWidth / zoom
-        const viewBoxHeight = effectiveCanvasHeight / zoom
-        
-        // Calculate centering offset to show the center of the large canvas
-        const centerX = CANVAS_WIDTH / 2
-        const centerY = CANVAS_HEIGHT / 2
-        const halfViewWidth = viewBoxWidth / 2
-        const halfViewHeight = viewBoxHeight / 2
-        
-        return {
-          x: panOffset.x + centerX - halfViewWidth,
-          y: panOffset.y + centerY - halfViewHeight,
-          width: viewBoxWidth,
-          height: viewBoxHeight
-        }
-      }
-    }
+    // At 100% zoom, show the entire canvas
+    // At higher zoom, show a smaller portion centered on zoomCenter
+    const viewBoxWidth = CANVAS_WIDTH / zoom
+    const viewBoxHeight = CANVAS_HEIGHT / zoom
     
-    // Fallback
+    // Center the view around zoomCenter
+    const halfViewWidth = viewBoxWidth / 2
+    const halfViewHeight = viewBoxHeight / 2
+    
     return {
-      x: panOffset.x,
-      y: panOffset.y,
-      width: effectiveCanvasWidth / zoom,
-      height: effectiveCanvasHeight / zoom
+      x: zoomCenter.x - halfViewWidth,
+      y: zoomCenter.y - halfViewHeight,
+      width: viewBoxWidth,
+      height: viewBoxHeight
     }
-  }, [zoom, effectiveCanvasWidth, effectiveCanvasHeight, panOffset])
+  }, [zoom, zoomCenter])
 
   const positionedDevices = useMemo(() => {
     if (devices.length === 0) {
@@ -235,19 +224,19 @@ const TopologyCanvas = () => {
   }, [positionedDevices])
 
   const connectionSegments = useMemo(() => {
-    console.log('🔍 DEBUG: Calculating connection segments')
-    console.log('Connections count:', connections.length)
-    console.log('Connections data:', connections)
-    console.log('Device positions map:', positionsById)
+    // console.log('🔍 DEBUG: Calculating connection segments')
+    // console.log('Connections count:', connections.length)
+    // console.log('Connections data:', connections)
+    // console.log('Device positions map:', positionsById)
     
     const result = connections
       .map((connection) => {
         const source = positionsById.get(connection.sourceDeviceId)
         const target = positionsById.get(connection.targetDeviceId)
 
-        console.log(`Connection ${connection.id}: ${connection.sourceDeviceId} → ${connection.targetDeviceId}`)
-        console.log(`Source position for ${connection.sourceDeviceId}:`, source)
-        console.log(`Target position for ${connection.targetDeviceId}:`, target)
+        // console.log(`Connection ${connection.id}: ${connection.sourceDeviceId} → ${connection.targetDeviceId}`)
+        // console.log(`Source position for ${connection.sourceDeviceId}:`, source)
+        // console.log(`Target position for ${connection.targetDeviceId}:`, target)
 
         if (!source || !target) {
           console.warn(`❌ Skipping connection ${connection.id} - missing positions`)
@@ -282,21 +271,144 @@ const TopologyCanvas = () => {
           },
         }
         
-        console.log(`✅ Created segment for connection ${connection.id}:`, segment)
+        // console.log(`✅ Created segment for connection ${connection.id}:`, segment)
         return segment
       })
       .filter((segment): segment is NonNullable<typeof segment> => Boolean(segment))
     
-    console.log('🎯 Final connection segments count:', result.length)
-    console.log('🎯 Final connection segments:', result)
+    // console.log('🎯 Final connection segments count:', result.length)
+    // console.log('🎯 Final connection segments:', result)
     return result
   }, [connections, positionsById])
 
-  const handleBackgroundClick = () => {
-    dispatch(selectEntity(null))
-    // Also clear multi-selection if any exists
-    if (multiSelected) {
-      dispatch(clearMultiSelection())
+  const handleBackgroundMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (isDrawingBoundary) {
+      const rect = canvasAreaRef.current?.getBoundingClientRect()
+      if (rect) {
+        const cursorX = event.clientX - rect.left
+        const cursorY = event.clientY - rect.top
+        
+        // Convert to SVG coordinates using viewBox
+        const viewBox = viewBoxDimensions
+        const svgX = viewBox.x + (cursorX / rect.width) * viewBox.width
+        const svgY = viewBox.y + (cursorY / rect.height) * viewBox.height
+        
+        setIsMouseDown(true)
+        setMouseDownPosition({ x: svgX, y: svgY })
+        
+        if (drawingPoints.length === 0) {
+          // Start drawing - set the first corner
+          dispatch(addDrawingPoint({ x: svgX, y: svgY }))
+        }
+      }
+      return
+    }
+    
+    // Only set mouse down if not clicking on interactive elements
+    const target = event.target as Element
+    if (!target.closest('.topology-boundary') && !target.closest('.topology-node')) {
+      setIsMouseDown(true)
+    }
+  }
+
+  const handleBackgroundMouseUp = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (isDrawingBoundary && isMouseDown && mouseDownPosition && drawingPoints.length === 1) {
+      const rect = canvasAreaRef.current?.getBoundingClientRect()
+      if (rect) {
+        const cursorX = event.clientX - rect.left
+        const cursorY = event.clientY - rect.top
+        
+        // Convert to SVG coordinates using viewBox
+        const viewBox = viewBoxDimensions
+        const svgX = viewBox.x + (cursorX / rect.width) * viewBox.width
+        const svgY = viewBox.y + (cursorY / rect.height) * viewBox.height
+        
+        // Complete the rectangle
+        const firstPoint = drawingPoints[0]
+        const secondPoint = { x: svgX, y: svgY }
+        
+        // Only create boundary if there's a meaningful size
+        const minSize = 20 // minimum size in SVG units
+        if (Math.abs(secondPoint.x - firstPoint.x) > minSize || Math.abs(secondPoint.y - firstPoint.y) > minSize) {
+          // Create a rectangle from these two diagonal corners
+          const minX = Math.min(firstPoint.x, secondPoint.x)
+          const maxX = Math.max(firstPoint.x, secondPoint.x)
+          const minY = Math.min(firstPoint.y, secondPoint.y)
+          const maxY = Math.max(firstPoint.y, secondPoint.y)
+          
+          // Create a new boundary with the rectangle points
+          const newBoundary = {
+            id: `boundary-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            type: currentBoundaryType!,
+            label: `${BOUNDARY_LABELS[currentBoundaryType!]} ${new Date().toLocaleDateString()}`,
+            points: [
+              { x: minX, y: minY }, // Top-left
+              { x: maxX, y: minY }, // Top-right
+              { x: maxX, y: maxY }, // Bottom-right
+              { x: minX, y: maxY }  // Bottom-left
+            ],
+            closed: true,
+            style: BOUNDARY_STYLES[currentBoundaryType!],
+            created: new Date().toISOString(),
+            // New device-like properties
+            position: {
+              x: minX,
+              y: minY,
+              width: maxX - minX,
+              height: maxY - minY
+            },
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY,
+            config: {}
+          }
+          
+          // Create the boundary via API
+          dispatch(createBoundaryAsync(newBoundary))
+          
+          // Finish the drawing
+          dispatch(finishDrawing({ 
+            label: newBoundary.label
+          }))
+        } else {
+          // Too small, cancel the drawing
+          dispatch(cancelDrawing())
+        }
+      }
+    } else if (!isDrawingBoundary && isMouseDown) {
+      // Only clear selection if we actually started the mouse down on the background
+      // and didn't click on any interactive element
+      const target = event.target as Element
+      if (!target.closest('.topology-boundary') && !target.closest('.topology-node')) {
+        dispatch(selectEntity(null))
+        if (multiSelected) {
+          dispatch(clearMultiSelection())
+        }
+      }
+    }
+    
+    setIsMouseDown(false)
+    setMouseDownPosition(null)
+  }
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    // Track mouse position for boundary drawing preview
+    if (isDrawingBoundary) {
+      const rect = canvasAreaRef.current?.getBoundingClientRect()
+      if (rect) {
+        const cursorX = event.clientX - rect.left
+        const cursorY = event.clientY - rect.top
+        
+        // Convert to SVG coordinates using viewBox (same as click handler)
+        const viewBox = viewBoxDimensions
+        const svgX = viewBox.x + (cursorX / rect.width) * viewBox.width
+        const svgY = viewBox.y + (cursorY / rect.height) * viewBox.height
+        
+        setMousePosition({ x: svgX, y: svgY })
+      }
+    } else {
+      setMousePosition(null)
     }
   }
 
@@ -310,15 +422,76 @@ const TopologyCanvas = () => {
 
   const handleZoomReset = () => {
     setZoom(1)
-    setPanOffset({ x: 0, y: 0 })
+    setZoomCenter({ x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 })
+  }
+
+  const handleNewDiagram = () => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      'Create a new diagram? This will clear all devices, connections, and boundaries. This action cannot be undone.'
+    )
+    
+    if (confirmed) {
+      // Clear all data
+      dispatch(resetDevices())
+      dispatch(resetConnections())
+      dispatch(clearAllBoundaries())
+      dispatch(resetUi())
+      
+      // Reset view
+      setZoom(1)
+      setZoomCenter({ x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 })
+    }
   }
 
   const handleWheel = useCallback((event: React.WheelEvent) => {
-    event.preventDefault()
-    // Use consistent step for the new zoom range
+    // Don't use preventDefault for passive events
+    if (event.cancelable) {
+      event.preventDefault()
+    }
+    
+    // Get cursor position relative to the canvas
+    const rect = canvasAreaRef.current?.getBoundingClientRect()
+    if (!rect) return
+    
+    const cursorX = event.clientX - rect.left
+    const cursorY = event.clientY - rect.top
+    
+    // Convert to SVG coordinates using the current viewBox
+    const viewBox = viewBoxDimensions
+    const svgX = viewBox.x + (cursorX / rect.width) * viewBox.width
+    const svgY = viewBox.y + (cursorY / rect.height) * viewBox.height
+    
+    // Calculate zoom delta
     const delta = event.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP
-    setZoom(prevZoom => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevZoom + delta)))
-  }, [zoom])
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + delta))
+    
+    if (newZoom !== zoom) {
+      // Calculate new center to keep the cursor point stable
+      const viewBoxWidth = CANVAS_WIDTH / newZoom
+      const viewBoxHeight = CANVAS_HEIGHT / newZoom
+      
+      // Calculate where the cursor point should be in the new view
+      const cursorRatioX = cursorX / rect.width
+      const cursorRatioY = cursorY / rect.height
+      
+      // Calculate new center that keeps the cursor point stable
+      const newCenterX = svgX - (cursorRatioX - 0.5) * viewBoxWidth
+      const newCenterY = svgY - (cursorRatioY - 0.5) * viewBoxHeight
+      
+      // Constrain the center to keep content visible
+      const maxCenterX = CANVAS_WIDTH - viewBoxWidth / 2
+      const minCenterX = viewBoxWidth / 2
+      const maxCenterY = CANVAS_HEIGHT - viewBoxHeight / 2
+      const minCenterY = viewBoxHeight / 2
+      
+      const constrainedCenterX = Math.max(minCenterX, Math.min(maxCenterX, newCenterX))
+      const constrainedCenterY = Math.max(minCenterY, Math.min(maxCenterY, newCenterY))
+      
+      setZoom(newZoom)
+      setZoomCenter({ x: constrainedCenterX, y: constrainedCenterY })
+    }
+  }, [zoom, viewBoxDimensions])
 
   // Keyboard shortcuts for zoom and pan
   useEffect(() => {
@@ -337,27 +510,6 @@ const TopologyCanvas = () => {
           case '0':
             event.preventDefault()
             handleZoomReset()
-            break
-        }
-      } else {
-        // Arrow keys for panning
-        const panStep = 50
-        switch (event.key) {
-          case 'ArrowUp':
-            event.preventDefault()
-            setPanOffset(prev => ({ x: prev.x, y: prev.y - panStep }))
-            break
-          case 'ArrowDown':
-            event.preventDefault()
-            setPanOffset(prev => ({ x: prev.x, y: prev.y + panStep }))
-            break
-          case 'ArrowLeft':
-            event.preventDefault()
-            setPanOffset(prev => ({ x: prev.x - panStep, y: prev.y }))
-            break
-          case 'ArrowRight':
-            event.preventDefault()
-            setPanOffset(prev => ({ x: prev.x + panStep, y: prev.y }))
             break
         }
       }
@@ -398,6 +550,11 @@ const TopologyCanvas = () => {
     }
   }, [])
 
+  // Fetch boundaries on component mount
+  useEffect(() => {
+    dispatch(fetchBoundaries())
+  }, [dispatch])
+
   const clampPosition = useCallback((value: { x: number; y: number }) => {
     return {
       x: Math.min(effectiveCanvasWidth - NODE_RADIUS, Math.max(NODE_RADIUS, value.x)),
@@ -427,63 +584,7 @@ const TopologyCanvas = () => {
     [],
   )
 
-  const handleBackgroundPointerDown = useCallback((event: React.PointerEvent) => {
-    // Only start panning if not clicking on a device
-    const target = event.target as Element
-    if (target.closest('.topology-node') || target.closest('.topology-connection')) {
-      return
-    }
 
-    event.preventDefault()
-    const svgPoint = svgPointFromEvent(event)
-    if (svgPoint) {
-      setPanState({
-        isPanning: true,
-        startX: svgPoint.x,
-        startY: svgPoint.y,
-        startPanOffset: { ...panOffset }
-      })
-      
-      // Capture pointer for smooth panning
-      if (event.currentTarget instanceof Element) {
-        event.currentTarget.setPointerCapture(event.pointerId)
-      }
-    }
-  }, [panOffset, svgPointFromEvent])
-
-  const handleBackgroundPointerMove = useCallback((event: React.PointerEvent) => {
-    if (!panState?.isPanning) return
-
-    event.preventDefault()
-    const svgPoint = svgPointFromEvent(event)
-    if (svgPoint) {
-      const deltaX = panState.startX - svgPoint.x
-      const deltaY = panState.startY - svgPoint.y
-      
-      // Apply pan constraints to prevent panning too far
-      const maxPanX = CANVAS_WIDTH / 2
-      const maxPanY = CANVAS_HEIGHT / 2
-      const minPanX = -CANVAS_WIDTH / 2
-      const minPanY = -CANVAS_HEIGHT / 2
-      
-      const newPanX = Math.max(minPanX, Math.min(maxPanX, panState.startPanOffset.x + deltaX))
-      const newPanY = Math.max(minPanY, Math.min(maxPanY, panState.startPanOffset.y + deltaY))
-      
-      setPanOffset({ x: newPanX, y: newPanY })
-    }
-  }, [panState, svgPointFromEvent])
-
-  const handleBackgroundPointerUp = useCallback((event: React.PointerEvent) => {
-    if (panState?.isPanning) {
-      event.preventDefault()
-      setPanState(null)
-      
-      // Release pointer capture
-      if (event.currentTarget instanceof Element) {
-        event.currentTarget.releasePointerCapture(event.pointerId)
-      }
-    }
-  }, [panState])
 
   if (devices.length === 0) {
     return (
@@ -514,46 +615,111 @@ const TopologyCanvas = () => {
           <h3>Topology View</h3>
           <p className="panel-subtitle">Visualize how devices are linked.</p>
         </div>
-        <div className="zoom-controls">
-          <button 
-            className="zoom-button" 
-            onClick={handleZoomOut} 
-            disabled={zoom <= MIN_ZOOM}
-            title="Zoom Out"
-          >
-            −
-          </button>
-          <span className="zoom-indicator">
-            {zoom >= 0.1 ? Math.round(zoom * 100) : Math.round(zoom * 1000) / 10}%
-          </span>
-          <button 
-            className="zoom-button" 
-            onClick={handleZoomIn} 
-            disabled={zoom >= MAX_ZOOM}
-            title="Zoom In"
-          >
-            +
-          </button>
-          <button 
-            className="zoom-button zoom-reset" 
-            onClick={handleZoomReset}
-            title="Reset Zoom"
-          >
-            ⌂
-          </button>
-          <button 
-            className="zoom-button" 
-            onClick={() => setIsExportModalOpen(true)}
-            title="Export Topology"
-          >
-            📤
-          </button>
+        <div className="topology-controls">
+          <div className="boundary-controls">
+            <button 
+              className="boundary-button ato"
+              onClick={() => dispatch(startDrawing('ato'))}
+              disabled={isDrawingBoundary}
+              title="Draw ATO Boundary"
+            >
+              🔴 ATO
+            </button>
+            <button 
+              className="boundary-button building"
+              onClick={() => dispatch(startDrawing('building'))}
+              disabled={isDrawingBoundary}
+              title="Draw Building Boundary"
+            >
+              🏢 Building
+            </button>
+            <button 
+              className="boundary-button network"
+              onClick={() => dispatch(startDrawing('network_segment'))}
+              disabled={isDrawingBoundary}
+              title="Draw Network Segment"
+            >
+              🌐 Network
+            </button>
+            <button 
+              className="boundary-button security"
+              onClick={() => dispatch(startDrawing('security_zone'))}
+              disabled={isDrawingBoundary}
+              title="Draw Security Zone"
+            >
+              🛡️ Security
+            </button>
+            {isDrawingBoundary && (
+              <>
+                <button 
+                  className="boundary-button finish"
+                  onClick={() => dispatch(finishDrawing({ label: `${BOUNDARY_LABELS[currentBoundaryType!]} ${new Date().toLocaleDateString()}` }))}
+                  disabled={drawingPoints.length < 3}
+                  title="Finish Drawing Boundary"
+                >
+                  ✅ Finish
+                </button>
+                <button 
+                  className="boundary-button cancel"
+                  onClick={() => dispatch(cancelDrawing())}
+                  title="Cancel Drawing"
+                >
+                  ❌ Cancel
+                </button>
+              </>
+            )}
+          </div>
+          
+          <div className="zoom-controls">
+            <button 
+              className="zoom-button new-diagram-button" 
+              onClick={handleNewDiagram}
+              title="New Diagram"
+            >
+              📄
+            </button>
+            <button 
+              className="zoom-button" 
+              onClick={handleZoomOut} 
+              disabled={zoom <= MIN_ZOOM}
+              title="Zoom Out"
+            >
+              −
+            </button>
+            <span className="zoom-indicator">
+              {zoom >= 0.1 ? Math.round(zoom * 100) : Math.round(zoom * 1000) / 10}%
+            </span>
+            <button 
+              className="zoom-button" 
+              onClick={handleZoomIn} 
+              disabled={zoom >= MAX_ZOOM}
+              title="Zoom In"
+            >
+              +
+            </button>
+            <button 
+              className="zoom-button zoom-reset" 
+              onClick={handleZoomReset}
+              title="Reset Zoom"
+            >
+              ⌂
+            </button>
+            <button 
+              className="zoom-button" 
+              onClick={() => setIsExportModalOpen(true)}
+              title="Export Topology"
+            >
+              📤
+            </button>
+          </div>
         </div>
       </header>
       <div 
         ref={canvasAreaRef} 
-        className={`topology-canvas-area ${panState?.isPanning ? 'panning' : ''}`} 
-        onClick={handleBackgroundClick} 
+        className="topology-canvas-area" 
+        onMouseDown={handleBackgroundMouseDown}
+        onMouseUp={handleBackgroundMouseUp}
+        onMouseMove={handleMouseMove}
         onWheel={handleWheel}
       >
         <svg
@@ -561,15 +727,9 @@ const TopologyCanvas = () => {
           className="topology-canvas-svg"
           viewBox={`${viewBoxDimensions.x} ${viewBoxDimensions.y} ${viewBoxDimensions.width} ${viewBoxDimensions.height}`}
           preserveAspectRatio="xMidYMid meet"
-          onPointerDown={handleBackgroundPointerDown}
-          onPointerMove={handleBackgroundPointerMove}
-          onPointerUp={handleBackgroundPointerUp}
           onPointerLeave={() => {
             if (dragState) {
               setDragState(null)
-            }
-            if (panState?.isPanning) {
-              setPanState(null)
             }
           }}
         >
@@ -641,6 +801,318 @@ const TopologyCanvas = () => {
             )
           })}
 
+          {/* Render boundaries */}
+          {boundaries.map(boundary => {
+            const isSelected = selected?.kind === 'boundary' && selected.id === boundary.id
+            return (
+              <g 
+                key={boundary.id} 
+                className={`topology-boundary ${isSelected ? 'is-selected' : ''}`}
+                style={{ cursor: 'pointer' }}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  event.preventDefault()
+                  console.log('🔥 BOUNDARY CLICK EVENT:', boundary.id, 'isDrawing:', isDrawingBoundary)
+                  // Don't interfere with boundary drawing
+                  if (!isDrawingBoundary) {
+                    console.log('🔥 Dispatching boundary selection...')
+                    dispatch(selectEntity({ kind: 'boundary', id: boundary.id }))
+                  }
+                }}
+              >
+                <polygon
+                  points={boundary.points.map(p => `${p.x},${p.y}`).join(' ')}
+                  fill={boundary.style.fill || 'none'}
+                  fillOpacity={boundary.style.fillOpacity || 0}
+                  stroke={isSelected ? '#2563eb' : boundary.style.color}
+                  strokeWidth={isSelected ? boundary.style.strokeWidth + 1 : boundary.style.strokeWidth}
+                  strokeDasharray={boundary.style.dashArray || 'none'}
+                  style={{ pointerEvents: 'auto' }}
+                />
+                {/* Invisible clickable area for easier selection */}
+                <polygon
+                  points={boundary.points.map(p => `${p.x},${p.y}`).join(' ')}
+                  fill="transparent"
+                  strokeWidth="10"
+                  stroke="transparent"
+                  style={{ pointerEvents: 'auto' }}
+                />
+                {/* Boundary label */}
+                {boundary.points.length > 0 && (
+                  <text
+                    x={boundary.points.reduce((sum, p) => sum + p.x, 0) / boundary.points.length}
+                    y={boundary.points.reduce((sum, p) => sum + p.y, 0) / boundary.points.length}
+                    textAnchor="middle"
+                    className="topology-boundary-label"
+                    fill={isSelected ? '#2563eb' : boundary.style.color}
+                    fontSize="14"
+                    fontWeight="bold"
+                    pointerEvents="none"
+                  >
+                    {boundary.label}
+                  </text>
+                )}
+
+                {/* Resize handles for selected boundaries */}
+                {isSelected && boundary.points.length > 0 && (() => {
+                  // Calculate bounding box from points
+                  const minX = Math.min(...boundary.points.map(p => p.x))
+                  const maxX = Math.max(...boundary.points.map(p => p.x))
+                  const minY = Math.min(...boundary.points.map(p => p.y))
+                  const maxY = Math.max(...boundary.points.map(p => p.y))
+                  
+                  const handleSize = 8
+                  const handleColor = '#2563eb'
+                  
+                  const ResizeHandle = ({ cx, cy, cursor, onMouseDown }) => (
+                    <rect
+                      x={cx - handleSize/2}
+                      y={cy - handleSize/2}
+                      width={handleSize}
+                      height={handleSize}
+                      fill={handleColor}
+                      stroke="white"
+                      strokeWidth="2"
+                      style={{ 
+                        cursor, 
+                        pointerEvents: 'auto',
+                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                      }}
+                      onMouseDown={onMouseDown}
+                    />
+                  )
+
+                  const handleResizeStart = (e, corner) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    
+                    const startX = e.clientX
+                    const startY = e.clientY
+                    const svgRect = e.currentTarget.closest('svg').getBoundingClientRect()
+                    
+                    const originalBounds = { minX, maxX, minY, maxY }
+                    
+                    const handleMouseMove = (moveEvent) => {
+                      const deltaX = (moveEvent.clientX - startX) / zoom
+                      const deltaY = (moveEvent.clientY - startY) / zoom
+                      
+                      let newMinX = originalBounds.minX
+                      let newMaxX = originalBounds.maxX  
+                      let newMinY = originalBounds.minY
+                      let newMaxY = originalBounds.maxY
+                      
+                      // Adjust bounds based on which corner is being dragged
+                      switch (corner) {
+                        case 'top-left':
+                          newMinX = Math.min(originalBounds.minX + deltaX, originalBounds.maxX - 50)
+                          newMinY = Math.min(originalBounds.minY + deltaY, originalBounds.maxY - 50)
+                          break
+                        case 'top-right':
+                          newMaxX = Math.max(originalBounds.maxX + deltaX, originalBounds.minX + 50)
+                          newMinY = Math.min(originalBounds.minY + deltaY, originalBounds.maxY - 50)
+                          break
+                        case 'bottom-left':
+                          newMinX = Math.min(originalBounds.minX + deltaX, originalBounds.maxX - 50)
+                          newMaxY = Math.max(originalBounds.maxY + deltaY, originalBounds.minY + 50)
+                          break
+                        case 'bottom-right':
+                          newMaxX = Math.max(originalBounds.maxX + deltaX, originalBounds.minX + 50)
+                          newMaxY = Math.max(originalBounds.maxY + deltaY, originalBounds.minY + 50)
+                          break
+                      }
+                      
+                      // Update boundary points to match new bounds
+                      const newPoints = [
+                        { x: newMinX, y: newMinY },
+                        { x: newMaxX, y: newMinY },
+                        { x: newMaxX, y: newMaxY },
+                        { x: newMinX, y: newMaxY }
+                      ]
+                      
+                      // Update position properties
+                      const newPosition = {
+                        x: newMinX,
+                        y: newMinY,
+                        width: newMaxX - newMinX,
+                        height: newMaxY - newMinY
+                      }
+                      
+                      dispatch(updateBoundary({ 
+                        id: boundary.id, 
+                        updates: { 
+                          points: newPoints,
+                          position: newPosition,
+                          x: newMinX,
+                          y: newMinY,
+                          width: newMaxX - newMinX,
+                          height: newMaxY - newMinY
+                        }
+                      }))
+                    }
+                    
+                    const handleMouseUp = () => {
+                      document.removeEventListener('mousemove', handleMouseMove)
+                      document.removeEventListener('mouseup', handleMouseUp)
+                    }
+                    
+                    document.addEventListener('mousemove', handleMouseMove)
+                    document.addEventListener('mouseup', handleMouseUp)
+                  }
+                  
+                  return (
+                    <g className="boundary-resize-handles">
+                      {/* Corner handles */}
+                      <ResizeHandle 
+                        cx={minX} 
+                        cy={minY} 
+                        cursor="nw-resize"
+                        onMouseDown={(e) => handleResizeStart(e, 'top-left')}
+                      />
+                      <ResizeHandle 
+                        cx={maxX} 
+                        cy={minY} 
+                        cursor="ne-resize"
+                        onMouseDown={(e) => handleResizeStart(e, 'top-right')}
+                      />
+                      <ResizeHandle 
+                        cx={maxX} 
+                        cy={maxY} 
+                        cursor="se-resize"
+                        onMouseDown={(e) => handleResizeStart(e, 'bottom-right')}
+                      />
+                      <ResizeHandle 
+                        cx={minX} 
+                        cy={maxY} 
+                        cursor="sw-resize"
+                        onMouseDown={(e) => handleResizeStart(e, 'bottom-left')}
+                      />
+                    </g>
+                  )
+                })()}
+              </g>
+            )
+          })}
+
+          {/* Render drawing boundary (preview) - Rectangular boundaries */}
+          {isDrawingBoundary && (
+            <g className="topology-boundary-drawing">
+              {/* Show live rectangular preview during drag */}
+              {drawingPoints.length === 1 && isMouseDown && mousePosition && (
+                (() => {
+                  const firstPoint = drawingPoints[0]
+                  const minX = Math.min(firstPoint.x, mousePosition.x)
+                  const maxX = Math.max(firstPoint.x, mousePosition.x)
+                  const minY = Math.min(firstPoint.y, mousePosition.y)
+                  const maxY = Math.max(firstPoint.y, mousePosition.y)
+                  
+                  return (
+                    <>
+                      {/* Live rectangle preview */}
+                      <rect
+                        x={minX}
+                        y={minY}
+                        width={maxX - minX}
+                        height={maxY - minY}
+                        fill="rgba(59, 130, 246, 0.1)"
+                        stroke="#3b82f6"
+                        strokeWidth="2"
+                        strokeDasharray="5,5"
+                        pointerEvents="none"
+                      />
+                      {/* Show corner points */}
+                      <circle cx={minX} cy={minY} r="3" fill="#3b82f6" stroke="white" strokeWidth="1" pointerEvents="none" />
+                      <circle cx={maxX} cy={minY} r="3" fill="#3b82f6" stroke="white" strokeWidth="1" pointerEvents="none" />
+                      <circle cx={maxX} cy={maxY} r="3" fill="#3b82f6" stroke="white" strokeWidth="1" pointerEvents="none" />
+                      <circle cx={minX} cy={maxY} r="3" fill="#3b82f6" stroke="white" strokeWidth="1" pointerEvents="none" />
+                    </>
+                  )
+                })()
+              )}
+              
+              {/* Show static preview when not dragging but have mouse position */}
+              {drawingPoints.length === 1 && !isMouseDown && mousePosition && (
+                (() => {
+                  const firstPoint = drawingPoints[0]
+                  const minX = Math.min(firstPoint.x, mousePosition.x)
+                  const maxX = Math.max(firstPoint.x, mousePosition.x)
+                  const minY = Math.min(firstPoint.y, mousePosition.y)
+                  const maxY = Math.max(firstPoint.y, mousePosition.y)
+                  
+                  return (
+                    <rect
+                      x={minX}
+                      y={minY}
+                      width={maxX - minX}
+                      height={maxY - minY}
+                      fill="none"
+                      stroke="#94a3b8"
+                      strokeWidth="1"
+                      strokeDasharray="3,3"
+                      pointerEvents="none"
+                      opacity="0.5"
+                    />
+                  )
+                })()
+              )}
+              
+              {/* Show placed first corner */}
+              {drawingPoints.length >= 1 && (
+                <circle
+                  cx={drawingPoints[0].x}
+                  cy={drawingPoints[0].y}
+                  r="5"
+                  fill="#3b82f6"
+                  stroke="white"
+                  strokeWidth="2"
+                  pointerEvents="none"
+                />
+              )}
+              
+              {/* Show instruction text */}
+              {drawingPoints.length === 0 && (
+                <text
+                  x={mousePosition?.x || CANVAS_WIDTH / 2}
+                  y={(mousePosition?.y || CANVAS_HEIGHT / 2) - 20}
+                  textAnchor="middle"
+                  fill="#3b82f6"
+                  fontSize="14"
+                  fontWeight="bold"
+                  pointerEvents="none"
+                >
+                  Mouse down and drag to draw boundary
+                </text>
+              )}
+              
+              {drawingPoints.length === 1 && !isMouseDown && (
+                <text
+                  x={mousePosition?.x || CANVAS_WIDTH / 2}
+                  y={(mousePosition?.y || CANVAS_HEIGHT / 2) - 20}
+                  textAnchor="middle"
+                  fill="#3b82f6"
+                  fontSize="14"
+                  fontWeight="bold"
+                  pointerEvents="none"
+                >
+                  Mouse down and drag to complete boundary
+                </text>
+              )}
+              
+              {drawingPoints.length === 1 && isMouseDown && (
+                <text
+                  x={mousePosition?.x || CANVAS_WIDTH / 2}
+                  y={(mousePosition?.y || CANVAS_HEIGHT / 2) - 20}
+                  textAnchor="middle"
+                  fill="#3b82f6"
+                  fontSize="14"
+                  fontWeight="bold"
+                  pointerEvents="none"
+                >
+                  Release to create boundary
+                </text>
+              )}
+            </g>
+          )}
+
           {positionedDevices.map(({ device, x, y }) => {
             const isSingleSelected = selected?.kind === 'device' && selected.id === device.id
             const isMultiSelected = multiSelected?.kind === 'device' && multiSelected.ids.includes(device.id)
@@ -679,11 +1151,13 @@ const TopologyCanvas = () => {
                 style={{ cursor: 'pointer' }}
                 onClick={(event) => {
                   event.stopPropagation()
-                  console.log('Device clicked:', device.id)
-                  if (event.ctrlKey || event.metaKey) {
-                    dispatch(toggleMultiSelect({ kind: 'device', id: device.id }))
-                  } else {
-                    dispatch(selectEntity({ kind: 'device', id: device.id }))
+                  // Don't interfere with boundary drawing
+                  if (!isDrawingBoundary) {
+                    if (event.ctrlKey || event.metaKey) {
+                      dispatch(toggleMultiSelect({ kind: 'device', id: device.id }))
+                    } else {
+                      dispatch(selectEntity({ kind: 'device', id: device.id }))
+                    }
                   }
                 }}
                 onPointerDown={(event) => {

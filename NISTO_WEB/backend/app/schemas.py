@@ -60,10 +60,52 @@ class ConnectionRead(ConnectionBase):
         from_attributes = True
 
 
+# Boundary schemas
+class BoundaryBase(BaseModel):
+    type: str  # ato, building, network_segment, etc.
+    label: str
+    points: List[Dict[str, float]]  # Array of {x, y} points
+    closed: bool = True
+    style: Dict[str, Any]  # Style properties
+    created: str  # ISO date string
+    # New device-like properties
+    x: Optional[float] = None
+    y: Optional[float] = None
+    width: Optional[float] = None
+    height: Optional[float] = None
+    config: Dict[str, str] = Field(default_factory=dict)
+
+
+class BoundaryCreate(BoundaryBase):
+    id: str  # UUID from frontend
+
+
+class BoundaryUpdate(BaseModel):
+    type: Optional[str] = None
+    label: Optional[str] = None
+    points: Optional[List[Dict[str, float]]] = None
+    closed: Optional[bool] = None
+    style: Optional[Dict[str, Any]] = None
+    # New device-like properties
+    x: Optional[float] = None
+    y: Optional[float] = None
+    width: Optional[float] = None
+    height: Optional[float] = None
+    config: Optional[Dict[str, str]] = None
+
+
+class BoundaryRead(BoundaryBase):
+    id: str
+
+    class Config:
+        from_attributes = True
+
+
 # Project schemas
 class ProjectData(BaseModel):
     devices: List[DeviceRead]
     connections: List[ConnectionRead]
+    boundaries: List[BoundaryRead] = Field(default_factory=list)
     ui_state: Optional[Dict[str, Any]] = None
 
 

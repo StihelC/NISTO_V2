@@ -85,6 +85,40 @@ def delete_connection(db: Session, db_connection: models.Connection) -> None:
     db.commit()
 
 
+# Boundary CRUD ----------------------------------------------------------------
+
+def get_boundaries(db: Session) -> List[models.Boundary]:
+    return db.query(models.Boundary).order_by(models.Boundary.created).all()
+
+
+def get_boundary(db: Session, boundary_id: str) -> Optional[models.Boundary]:
+    return db.query(models.Boundary).filter(models.Boundary.id == boundary_id).first()
+
+
+def create_boundary(db: Session, boundary: schemas.BoundaryCreate) -> models.Boundary:
+    db_boundary = models.Boundary(**boundary.model_dump())
+    db.add(db_boundary)
+    db.commit()
+    db.refresh(db_boundary)
+    return db_boundary
+
+
+def update_boundary(
+    db: Session, db_boundary: models.Boundary, boundary_update: schemas.BoundaryUpdate
+) -> models.Boundary:
+    update_data = boundary_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_boundary, field, value)
+    db.commit()
+    db.refresh(db_boundary)
+    return db_boundary
+
+
+def delete_boundary(db: Session, db_boundary: models.Boundary) -> None:
+    db.delete(db_boundary)
+    db.commit()
+
+
 # Project CRUD -----------------------------------------------------------------
 
 def get_projects(db: Session) -> List[schemas.ProjectSummary]:
@@ -177,13 +211,15 @@ def create_or_update_auto_save(
 
 
 def get_current_state(db: Session) -> schemas.ProjectData:
-    """Get current devices and connections as ProjectData."""
+    """Get current devices, connections, and boundaries as ProjectData."""
     devices = get_devices(db)
     connections = get_connections(db)
+    boundaries = get_boundaries(db)
     
     return schemas.ProjectData(
         devices=[schemas.DeviceRead.model_validate(device) for device in devices],
         connections=[schemas.ConnectionRead.model_validate(conn) for conn in connections],
+        boundaries=[schemas.BoundaryRead.model_validate(boundary) for boundary in boundaries],
         ui_state=None,
     )
 

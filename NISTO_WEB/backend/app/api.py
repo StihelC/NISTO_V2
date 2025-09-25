@@ -169,6 +169,50 @@ def validate_connection_update_payload(
             )
 
 
+# Boundary endpoints -----------------------------------------------------------
+
+@router.get("/boundaries", response_model=List[schemas.BoundaryRead])
+def list_boundaries(db: Session = Depends(get_db)) -> List[schemas.BoundaryRead]:
+    return crud.get_boundaries(db)
+
+
+@router.post(
+    "/boundaries",
+    response_model=schemas.BoundaryRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_boundary(boundary: schemas.BoundaryCreate, db: Session = Depends(get_db)):
+    return crud.create_boundary(db, boundary)
+
+
+@router.get("/boundaries/{boundary_id}", response_model=schemas.BoundaryRead)
+def get_boundary(boundary_id: str, db: Session = Depends(get_db)):
+    db_boundary = crud.get_boundary(db, boundary_id)
+    if not db_boundary:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Boundary not found")
+    return db_boundary
+
+
+@router.put("/boundaries/{boundary_id}", response_model=schemas.BoundaryRead)
+def update_boundary(
+    boundary_id: str,
+    boundary_update: schemas.BoundaryUpdate,
+    db: Session = Depends(get_db),
+):
+    db_boundary = crud.get_boundary(db, boundary_id)
+    if not db_boundary:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Boundary not found")
+    return crud.update_boundary(db, db_boundary, boundary_update)
+
+
+@router.delete("/boundaries/{boundary_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_boundary(boundary_id: str, db: Session = Depends(get_db)):
+    db_boundary = crud.get_boundary(db, boundary_id)
+    if not db_boundary:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Boundary not found")
+    crud.delete_boundary(db, db_boundary)
+
+
 # Project endpoints ------------------------------------------------------------
 
 @router.get("/projects", response_model=List[schemas.ProjectSummary])
@@ -245,8 +289,10 @@ def load_project(project_id: int, db: Session = Depends(get_db)):
     # Clear current data
     for device in crud.get_devices(db):
         crud.delete_device(db, device)
+    for boundary in crud.get_boundaries(db):
+        crud.delete_boundary(db, boundary)
     
-    # Load project devices and connections
+    # Load project devices, connections, and boundaries
     project_data = db_project.project_data
     device_mapping = {}  # old_id -> new_id
     
@@ -277,6 +323,19 @@ def load_project(project_id: int, db: Session = Depends(get_db)):
             )
             crud.create_connection(db, connection_create)
     
+    # Create boundaries
+    for boundary_data in project_data.get("boundaries", []):
+        boundary_create = schemas.BoundaryCreate(
+            id=boundary_data["id"],
+            type=boundary_data["type"],
+            label=boundary_data["label"],
+            points=boundary_data["points"],
+            closed=boundary_data.get("closed", True),
+            style=boundary_data["style"],
+            created=boundary_data["created"],
+        )
+        crud.create_boundary(db, boundary_create)
+    
     return {"message": "Project loaded successfully"}
 
 
@@ -300,8 +359,10 @@ def load_auto_save(db: Session = Depends(get_db)):
     # Clear current data
     for device in crud.get_devices(db):
         crud.delete_device(db, device)
+    for boundary in crud.get_boundaries(db):
+        crud.delete_boundary(db, boundary)
     
-    # Load project devices and connections
+    # Load project devices, connections, and boundaries
     project_data = auto_save.project_data
     device_mapping = {}  # old_id -> new_id
     
@@ -331,6 +392,19 @@ def load_auto_save(db: Session = Depends(get_db)):
                 properties=conn_data.get("properties", {}),
             )
             crud.create_connection(db, connection_create)
+    
+    # Create boundaries
+    for boundary_data in project_data.get("boundaries", []):
+        boundary_create = schemas.BoundaryCreate(
+            id=boundary_data["id"],
+            type=boundary_data["type"],
+            label=boundary_data["label"],
+            points=boundary_data["points"],
+            closed=boundary_data.get("closed", True),
+            style=boundary_data["style"],
+            created=boundary_data["created"],
+        )
+        crud.create_boundary(db, boundary_create)
     
     return {"message": "Auto-save loaded successfully"}
 

@@ -2,6 +2,7 @@ import { combineReducers, configureStore } from '@reduxjs/toolkit'
 
 import connectionsReducer, { deleteConnectionsByDevice } from './connectionsSlice'
 import devicesReducer from './devicesSlice'
+import boundariesReducer from './boundariesSlice'
 import { restore } from './historyActions'
 import projectsReducer from './projectsSlice'
 import uiReducer from './uiSlice'
@@ -10,6 +11,7 @@ import { createUndoRedoMiddleware } from './undoRedoMiddleware'
 const baseReducer = combineReducers({
   devices: devicesReducer,
   connections: connectionsReducer,
+  boundaries: boundariesReducer,
   ui: uiReducer,
   projects: projectsReducer,
 })
@@ -42,9 +44,25 @@ export type AppDispatch = typeof store.dispatch
 export type RootStateFromStore = ReturnType<typeof store.getState>
 
 // Re-export everything for easier imports
-export type { RootState, DeviceType } from './types'
+export type { RootState, DeviceType, BoundaryType } from './types'
 export { fetchDevices, createDeviceAsync, updateDeviceAsync, deleteDeviceAsync } from './devicesSlice'
 export { fetchConnections, createConnectionAsync } from './connectionsSlice'
+export { 
+  startDrawing, 
+  addDrawingPoint, 
+  updateLastDrawingPoint, 
+  finishDrawing, 
+  cancelDrawing, 
+  fetchBoundaries,
+  createBoundaryAsync,
+  updateBoundaryAsync,
+  deleteBoundaryAsync,
+  selectBoundaries,
+  selectIsDrawingBoundary,
+  selectCurrentBoundaryType,
+  selectDrawingPoints,
+  BOUNDARY_LABELS
+} from './boundariesSlice'
 export { selectEntity, toggleMultiSelect, clearMultiSelection } from './uiSlice'
 export * from './projectsSlice'
 export * from './historyActions'
