@@ -1,4 +1,34 @@
-export type DeviceType = 'switch' | 'router' | 'firewall' | 'server' | 'workstation' | 'generic'
+export type DeviceType = 
+  // Network Infrastructure
+  | 'switch' | 'router' | 'firewall' | 'load-balancer' | 'proxy' | 'gateway' | 'modem' | 'access-point' | 'wireless-controller'
+  // Security Devices
+  | 'ids-ips' | 'waf' | 'vpn-concentrator' | 'security-appliance' | 'utm' | 'dlp' | 'siem'
+  // Servers & Compute
+  | 'server' | 'web-server' | 'database-server' | 'file-server' | 'mail-server' | 'dns-server' | 'dhcp-server' | 'domain-controller'
+  | 'hypervisor' | 'vm' | 'container' | 'kubernetes-node' | 'docker-host'
+  // Storage
+  | 'nas' | 'san' | 'storage-array' | 'backup-server' | 'tape-library'
+  // Endpoints
+  | 'workstation' | 'laptop' | 'desktop' | 'thin-client' | 'tablet' | 'smartphone' | 'pos-terminal' | 'kiosk'
+  // IoT & Embedded
+  | 'iot-device' | 'sensor' | 'camera' | 'ip-phone' | 'printer' | 'scanner' | 'badge-reader' | 'smart-tv'
+  // Cloud Services - AWS
+  | 'aws-ec2' | 'aws-rds' | 'aws-s3' | 'aws-lambda' | 'aws-ecs' | 'aws-eks' | 'aws-elb' | 'aws-cloudfront' | 'aws-api-gateway'
+  | 'aws-vpc' | 'aws-route53' | 'aws-iam' | 'aws-cloudwatch' | 'aws-sqs' | 'aws-sns' | 'aws-dynamodb'
+  // Cloud Services - Azure
+  | 'azure-vm' | 'azure-sql' | 'azure-storage' | 'azure-functions' | 'azure-aks' | 'azure-app-service' | 'azure-load-balancer'
+  | 'azure-cdn' | 'azure-api-management' | 'azure-vnet' | 'azure-dns' | 'azure-ad' | 'azure-monitor' | 'azure-service-bus'
+  // Cloud Services - GCP
+  | 'gcp-compute' | 'gcp-cloud-sql' | 'gcp-storage' | 'gcp-functions' | 'gcp-gke' | 'gcp-app-engine' | 'gcp-load-balancer'
+  // Operating Systems
+  | 'windows-server' | 'linux-server' | 'ubuntu-server' | 'centos-server' | 'redhat-server' | 'debian-server'
+  | 'windows-10' | 'windows-11' | 'macos' | 'ubuntu-desktop' | 'android' | 'ios'
+  // Monitoring & Management
+  | 'monitoring-server' | 'log-server' | 'nms' | 'orchestrator' | 'automation-server'
+  // Legacy & Mainframe
+  | 'mainframe' | 'as400' | 'legacy-system'
+  // Generic
+  | 'generic' | 'unknown'
 
 export interface Device {
   id: string

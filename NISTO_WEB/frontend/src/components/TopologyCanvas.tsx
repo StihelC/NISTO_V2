@@ -5,6 +5,8 @@ import { useDispatch, useSelector } from 'react-redux'
 import { selectConnections, selectDevices, selectSelectedEntity } from '../store/selectors'
 import { selectEntity, toggleMultiSelect, clearMultiSelection } from '../store/uiSlice'
 import { updateDevice, updateDeviceAsync } from '../store/devicesSlice'
+import { DEVICE_LABELS } from '../constants/deviceTypes'
+import DeviceIcon from './DeviceIcon'
 import ExportModal from './ExportModal'
 
 const CANVAS_WIDTH = 4000
@@ -842,59 +844,56 @@ const TopologyCanvas = () => {
                   }
                 }}
               >
-                {/* Main device circle */}
-                <circle r={zoom < 0.2 ? NODE_RADIUS * 0.8 : NODE_RADIUS} fill={`url(#${gradientId})`} />
+                {/* Invisible background circle for click area and positioning */}
+                <circle 
+                  r={zoom < 0.2 ? NODE_RADIUS * 0.8 : NODE_RADIUS} 
+                  fill="transparent" 
+                  stroke="none"
+                  strokeWidth="0"
+                  opacity="0"
+                />
                 
-                {/* Security indicators */}
-                {vulnerabilities > 0 && (
+                {/* Selection ring for selected devices */}
+                {(isSelected || isMultiSelected) && (
                   <circle 
-                    r={6} 
-                    cx={NODE_RADIUS - 8} 
-                    cy={-NODE_RADIUS + 8} 
-                    fill="#ef4444" 
-                    stroke="white" 
-                    strokeWidth="2"
+                    r={zoom < 0.2 ? 22 : 28} 
+                    fill="none" 
+                    stroke={isSelected ? "#3b82f6" : "#10b981"}
+                    strokeWidth={zoom < 0.2 ? "2" : "3"}
+                    opacity="0.8"
+                    className="selection-ring"
                   />
                 )}
                 
-                {!monitoringEnabled && (
-                  <circle 
-                    r={6} 
-                    cx={-NODE_RADIUS + 8} 
-                    cy={-NODE_RADIUS + 8} 
-                    fill="#f59e0b" 
-                    stroke="white" 
-                    strokeWidth="2"
-                  />
-                )}
+                {/* Main device icon (replaces the circle) */}
+                <foreignObject 
+                  x={zoom < 0.2 ? "-18" : "-24"} 
+                  y={zoom < 0.2 ? "-18" : "-24"} 
+                  width={zoom < 0.2 ? "36" : "48"} 
+                  height={zoom < 0.2 ? "36" : "48"}
+                  className="topology-node-icon"
+                >
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'center', 
+                    alignItems: 'center', 
+                    width: '100%', 
+                    height: '100%' 
+                  }}>
+                    <DeviceIcon 
+                      deviceType={device.type} 
+                      size={zoom < 0.2 ? 28 : 36} 
+                    />
+                  </div>
+                </foreignObject>
                 
-                {complianceStatus === 'Compliant' && (
-                  <circle 
-                    r={6} 
-                    cx={0} 
-                    cy={-NODE_RADIUS + 8} 
-                    fill="#22c55e" 
-                    stroke="white" 
-                    strokeWidth="2"
-                  />
-                )}
-                
-                {complianceStatus === 'Non-Compliant' && (
-                  <circle 
-                    r={6} 
-                    cx={0} 
-                    cy={-NODE_RADIUS + 8} 
-                    fill="#ef4444" 
-                    stroke="white" 
-                    strokeWidth="2"
-                  />
-                )}
+                {/* Security indicators removed for clean icon display */}
                 
                 <text className="topology-node-title" y={NODE_RADIUS + 20}>
                   {device.name}
                 </text>
                 <text className="topology-node-subtitle" y={NODE_RADIUS + 38}>
-                  {device.type}
+                  {DEVICE_LABELS[device.type] || device.type}
                 </text>
                 
                 {/* Risk level indicator */}

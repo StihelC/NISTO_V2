@@ -2,11 +2,12 @@ import type { FormEvent } from 'react'
 import { useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
-import { createDevice, createDeviceAsync, deleteDevice, deleteDeviceAsync, createBulkDevicesAsync } from '../store/devicesSlice'
+import { createDeviceAsync, deleteDeviceAsync, createBulkDevicesAsync } from '../store/devicesSlice'
 import { selectEntity, toggleMultiSelect, clearMultiSelection } from '../store/uiSlice'
 import type { DeviceType, RootState } from '../store'
-
-const DEVICE_TYPES: DeviceType[] = ['switch', 'router', 'firewall', 'server', 'workstation', 'generic']
+import { DEVICE_CATEGORIES, DEVICE_LABELS } from '../constants/deviceTypes'
+import DeviceIcon from './DeviceIcon'
+import DeviceIconPreview from './DeviceIconPreview'
 const ARRANGEMENT_TYPES = [
   { value: 'grid', label: 'Grid' },
   { value: 'circle', label: 'Circle' },
@@ -33,6 +34,22 @@ const DeviceList = () => {
   const [bulkType, setBulkType] = useState<DeviceType>('switch')
   const [arrangement, setArrangement] = useState<ArrangementType>('grid')
   const [bulkError, setBulkError] = useState<string | null>(null)
+  const [showIconPreview, setShowIconPreview] = useState(false)
+  const [showDeviceSelector, setShowDeviceSelector] = useState(false)
+  const [selectorMode, setSelectorMode] = useState<'single' | 'bulk'>('single')
+
+  const handleDeviceTypeSelect = (deviceType: DeviceType) => {
+    if (selectorMode === 'single') {
+      setType(deviceType)
+    } else {
+      setBulkType(deviceType)
+    }
+  }
+
+  const openDeviceSelector = (mode: 'single' | 'bulk') => {
+    setSelectorMode(mode)
+    setShowDeviceSelector(true)
+  }
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -98,18 +115,28 @@ const DeviceList = () => {
         </div>
       </header>
       <div className="panel-content">
-        <div className="form-tabs">
-          <button 
-            className={`form-tab ${!showBulkForm ? 'active' : ''}`}
-            onClick={() => setShowBulkForm(false)}
+        <div className="panel-actions">
+          <div className="form-tabs">
+            <button 
+              className={`form-tab ${!showBulkForm ? 'active' : ''}`}
+              onClick={() => setShowBulkForm(false)}
+            >
+              Single Device
+            </button>
+            <button 
+              className={`form-tab ${showBulkForm ? 'active' : ''}`}
+              onClick={() => setShowBulkForm(true)}
+            >
+              Multiple Devices
+            </button>
+          </div>
+          <button
+            type="button"
+            className="secondary-button icon-preview-button"
+            onClick={() => setShowIconPreview(true)}
+            title="Preview device icons"
           >
-            Single Device
-          </button>
-          <button 
-            className={`form-tab ${showBulkForm ? 'active' : ''}`}
-            onClick={() => setShowBulkForm(true)}
-          >
-            Multiple Devices
+            🎨 Icons
           </button>
         </div>
 
@@ -131,13 +158,13 @@ const DeviceList = () => {
             </label>
             <label className="form-field">
               <span>Type</span>
-              <select value={type} onChange={(event) => setType(event.target.value as DeviceType)}>
-                {DEVICE_TYPES.map((deviceType) => (
-                  <option key={deviceType} value={deviceType}>
-                    {deviceType}
-                  </option>
-                ))}
-              </select>
+              <div className="device-type-selector">
+                <div className="selected-device-type" onClick={() => openDeviceSelector('single')}>
+                  <DeviceIcon deviceType={type} size={20} />
+                  <span>{DEVICE_LABELS[type]}</span>
+                  <span className="selector-arrow">▼</span>
+                </div>
+              </div>
             </label>
             {error && <p className="form-error">{error}</p>}
             <button type="submit" className="primary-button">
@@ -162,13 +189,13 @@ const DeviceList = () => {
             </label>
             <label className="form-field">
               <span>Type</span>
-              <select value={bulkType} onChange={(event) => setBulkType(event.target.value as DeviceType)}>
-                {DEVICE_TYPES.map((deviceType) => (
-                  <option key={deviceType} value={deviceType}>
-                    {deviceType}
-                  </option>
-                ))}
-              </select>
+              <div className="device-type-selector">
+                <div className="selected-device-type" onClick={() => openDeviceSelector('bulk')}>
+                  <DeviceIcon deviceType={bulkType} size={20} />
+                  <span>{DEVICE_LABELS[bulkType]}</span>
+                  <span className="selector-arrow">▼</span>
+                </div>
+              </div>
             </label>
             <label className="form-field">
               <span>Quantity</span>
@@ -234,8 +261,11 @@ const DeviceList = () => {
                   className="list-row" 
                   onClick={(e) => handleSelect(device.id, e.ctrlKey || e.metaKey)}
                 >
-                  <span className="list-title">{device.name}</span>
-                  <span className="list-caption">{device.type}</span>
+                  <span className="list-title">
+                    <DeviceIcon deviceType={device.type} size={16} className="device-icon" />
+                    {device.name}
+                  </span>
+                  <span className="list-caption">{DEVICE_LABELS[device.type] || device.type}</span>
                   {isMultiSelected && <span className="multi-select-indicator">✓</span>}
                 </button>
                 <button type="button" className="danger-button" onClick={() => handleDelete(device.id)}>
@@ -246,6 +276,19 @@ const DeviceList = () => {
           })}
         </ul>
       </div>
+      
+      {showIconPreview && (
+        <DeviceIconPreview onClose={() => setShowIconPreview(false)} />
+      )}
+      
+      {showDeviceSelector && (
+        <DeviceIconPreview 
+          mode="selector"
+          selectedDeviceType={selectorMode === 'single' ? type : bulkType}
+          onSelectDeviceType={handleDeviceTypeSelect}
+          onClose={() => setShowDeviceSelector(false)} 
+        />
+      )}
     </div>
   )
 }

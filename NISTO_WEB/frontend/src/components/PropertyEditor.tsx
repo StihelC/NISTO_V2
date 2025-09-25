@@ -6,6 +6,8 @@ import { updateDevice, updateDeviceAsync, deleteDeviceAsync } from '../store/dev
 import { updateConnection, createConnectionAsync, fetchConnections } from '../store/connectionsSlice'
 import { selectEntity } from '../store/uiSlice'
 import type { DeviceType, RootState } from '../store'
+import { DEVICE_CATEGORIES, DEVICE_LABELS } from '../constants/deviceTypes'
+import DeviceIcon from './DeviceIcon'
 
 // NIST RMF Security Categories and Controls
 const NIST_CATEGORIES = {
@@ -194,7 +196,10 @@ const PropertyEditor = () => {
             <p>Editing {multiSelectedDevices.length} devices:</p>
             <ul className="selected-devices-list">
               {multiSelectedDevices.map(device => (
-                <li key={device.id}>{device.name} ({device.type})</li>
+                <li key={device.id}>
+                  <DeviceIcon deviceType={device.type} size={14} className="device-icon" />
+                  {device.name} ({DEVICE_LABELS[device.type] || device.type})
+                </li>
               ))}
             </ul>
           </div>
@@ -439,12 +444,15 @@ const PropertyEditor = () => {
               <label className="form-field">
                 <span>Type</span>
                 <select name="type" value={device.type} onChange={handleChange}>
-                  <option value="switch">Switch</option>
-                  <option value="router">Router</option>
-                  <option value="firewall">Firewall</option>
-                  <option value="server">Server</option>
-                  <option value="workstation">Workstation</option>
-                  <option value="generic">Generic</option>
+                  {Object.entries(DEVICE_CATEGORIES).map(([category, deviceTypes]) => (
+                    <optgroup key={category} label={category}>
+                      {deviceTypes.map((deviceType) => (
+                        <option key={deviceType} value={deviceType}>
+                          {DEVICE_LABELS[deviceType]}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
                 </select>
               </label>
               <label className="form-field">
