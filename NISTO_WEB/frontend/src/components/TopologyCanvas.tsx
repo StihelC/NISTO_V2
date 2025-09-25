@@ -21,6 +21,9 @@ interface DragState {
   offsetX: number
   offsetY: number
   position: { x: number; y: number }
+  startTime: number
+  startPosition: { x: number; y: number }
+  hasMoved: boolean
 }
 
 interface PanState {
@@ -614,6 +617,12 @@ const TopologyCanvas = () => {
                 key={device.id}
                 className={`topology-node ${isSelected ? 'is-selected' : ''}`}
                 transform={`translate(${x}, ${y})`}
+                style={{ cursor: 'pointer' }}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  console.log('Device clicked:', device.id)
+                  dispatch(selectEntity({ kind: 'device', id: device.id }))
+                }}
                 onPointerDown={(event) => {
                   event.stopPropagation()
                   event.preventDefault()
@@ -628,9 +637,11 @@ const TopologyCanvas = () => {
                     offsetX: svgPoint.x - currentPosition.x,
                     offsetY: svgPoint.y - currentPosition.y,
                     position: currentPosition,
+                    startTime: Date.now(),
+                    startPosition: { x: svgPoint.x, y: svgPoint.y },
+                    hasMoved: false,
                   })
                   event.currentTarget.setPointerCapture(event.pointerId)
-                  dispatch(selectEntity({ kind: 'device', id: device.id }))
                 }}
                 onPointerMove={(event) => {
                   if (!dragState || dragState.id !== device.id) {
@@ -642,6 +653,11 @@ const TopologyCanvas = () => {
                     return
                   }
 
+                  // Check if we've moved enough to consider this a drag (not just a click)
+                  const deltaX = Math.abs(svgPoint.x - dragState.startPosition.x)
+                  const deltaY = Math.abs(svgPoint.y - dragState.startPosition.y)
+                  const hasMoved = deltaX > 5 || deltaY > 5
+
                   const nextPosition = clampPosition({
                     x: svgPoint.x - dragState.offsetX,
                     y: svgPoint.y - dragState.offsetY,
@@ -652,6 +668,7 @@ const TopologyCanvas = () => {
                       ? {
                           ...previous,
                           position: nextPosition,
+                          hasMoved,
                         }
                       : previous,
                   )
@@ -660,11 +677,13 @@ const TopologyCanvas = () => {
                   if (dragState && dragState.id === device.id) {
                     event.currentTarget.releasePointerCapture(event.pointerId)
                     const finalPosition = dragState.position
+                    const wasActuallyDragged = dragState.hasMoved
+                    
                     setDragState(null)
-                    if (finalPosition) {
-                      // Update local state immediately for UI responsiveness
-                      dispatch(updateDevice({ id: device.id, position: finalPosition }))
-                      // Update backend asynchronously
+                    
+                    // Only update position if the device was actually dragged
+                    if (finalPosition && wasActuallyDragged) {
+                      // Only update backend - it will update local state when successful
                       dispatch(updateDeviceAsync({ id: device.id, position: finalPosition }))
                     }
                   }

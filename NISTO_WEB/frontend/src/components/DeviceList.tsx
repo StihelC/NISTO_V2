@@ -24,9 +24,7 @@ const DeviceList = () => {
       return
     }
 
-    // Create device in local state immediately for UI responsiveness
-    dispatch(createDevice({ name, type }))
-    // Create device in backend asynchronously
+    // Only create device in backend - it will update local state when successful
     dispatch(createDeviceAsync({ name, type }))
     setName('')
     setType('switch')
@@ -34,9 +32,7 @@ const DeviceList = () => {
   }
 
   const handleDelete = (id: string) => {
-    // Delete from local state immediately
-    dispatch(deleteDevice(id))
-    // Delete from backend asynchronously
+    // Only delete from backend - it will update local state when successful
     dispatch(deleteDeviceAsync(id))
   }
 

@@ -111,9 +111,7 @@ const PropertyEditor = () => {
           id: device.id,
           [name]: name === 'type' ? (value as DeviceType) : value,
         }
-        // Update local state immediately
-        dispatch(updateDevice(updateData))
-        // Update backend asynchronously
+        // Only update backend - it will update local state when successful
         dispatch(updateDeviceAsync(updateData))
       } else {
         // Update config for security properties
@@ -122,9 +120,7 @@ const PropertyEditor = () => {
           [name]: type === 'checkbox' ? checked.toString() : value
         }
         const updateData = { id: device.id, config: newConfig }
-        // Update local state immediately
-        dispatch(updateDevice(updateData))
-        // Update backend asynchronously
+        // Only update backend - it will update local state when successful
         dispatch(updateDeviceAsync(updateData))
       }
     }
@@ -150,9 +146,7 @@ const PropertyEditor = () => {
         securityControls: JSON.stringify(controls)
       }
       const updateData = { id: device.id, config: newConfig }
-      // Update local state immediately
-      dispatch(updateDevice(updateData))
-      // Update backend asynchronously
+      // Only update backend - it will update local state when successful
       dispatch(updateDeviceAsync(updateData))
     }
 
