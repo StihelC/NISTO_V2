@@ -32,6 +32,11 @@ export type SelectedEntity =
   | { kind: 'connection'; id: string }
   | null
 
+export interface MultiSelection {
+  kind: 'device' | 'connection'
+  ids: string[]
+}
+
 export interface HistoryState {
   canUndo: boolean
   canRedo: boolean
@@ -39,6 +44,7 @@ export interface HistoryState {
 
 export interface UiState {
   selected: SelectedEntity
+  multiSelected: MultiSelection | null
   history: HistoryState
 }
 

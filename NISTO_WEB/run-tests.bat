@@ -123,3 +123,4 @@ exit /b %TOTAL_EXIT%
 echo.
 echo Test execution completed.
 endlocal
+

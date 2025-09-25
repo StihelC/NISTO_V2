@@ -306,3 +306,4 @@ describe('PropertyEditor Component', () => {
     expect(screen.getByText('Select a device or connection.')).toBeInTheDocument()
   })
 })
+

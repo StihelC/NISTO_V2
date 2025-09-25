@@ -2,7 +2,7 @@ import type { ChangeEvent } from 'react'
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
-import { updateDevice, updateDeviceAsync } from '../store/devicesSlice'
+import { updateDevice, updateDeviceAsync, deleteDeviceAsync } from '../store/devicesSlice'
 import { updateConnection } from '../store/connectionsSlice'
 import { selectEntity } from '../store/uiSlice'
 import type { DeviceType, RootState } from '../store'
@@ -45,6 +45,7 @@ interface SecurityControl {
 const PropertyEditor = () => {
   const dispatch = useDispatch()
   const selected = useSelector((state: RootState) => state.ui.selected)
+  const multiSelected = useSelector((state: RootState) => state.ui.multiSelected)
   const devices = useSelector((state: RootState) => state.devices.items)
   const connections = useSelector((state: RootState) => state.connections.items)
   
@@ -54,6 +55,11 @@ const PropertyEditor = () => {
   const device = selected?.kind === 'device' ? devices.find((item) => item.id === selected.id) : null
   const connection =
     selected?.kind === 'connection' ? connections.find((item) => item.id === selected.id) : null
+  
+  // Handle multi-selected devices
+  const multiSelectedDevices = multiSelected?.kind === 'device' 
+    ? devices.filter(device => multiSelected.ids.includes(device.id))
+    : []
 
   useEffect(() => {
     if (selected && !device && !connection) {
@@ -63,10 +69,71 @@ const PropertyEditor = () => {
 
   // Reset tab to 'general' when switching devices
   useEffect(() => {
-    if (device) {
+    if (device || multiSelectedDevices.length > 0) {
       setActiveTab('general')
     }
-  }, [device?.id])
+  }, [device?.id, multiSelectedDevices.length])
+
+  // Show multi-selection editor if multiple devices are selected
+  if (multiSelected?.kind === 'device' && multiSelectedDevices.length > 0) {
+    return (
+      <div className="panel">
+        <header className="panel-header">
+          <h3>Properties ({multiSelectedDevices.length} devices selected)</h3>
+        </header>
+        <div className="panel-content">
+          <div className="multi-edit-info">
+            <p>Editing {multiSelectedDevices.length} devices:</p>
+            <ul className="selected-devices-list">
+              {multiSelectedDevices.map(device => (
+                <li key={device.id}>{device.name} ({device.type})</li>
+              ))}
+            </ul>
+          </div>
+          
+          <div className="form">
+            <label className="form-field">
+              <span>Type (applies to all selected)</span>
+              <select 
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    multiSelectedDevices.forEach(device => {
+                      dispatch(updateDeviceAsync({ id: device.id, type: e.target.value as DeviceType }))
+                    })
+                  }
+                }}
+              >
+                <option value="">-- Change Type --</option>
+                <option value="switch">Switch</option>
+                <option value="router">Router</option>
+                <option value="firewall">Firewall</option>
+                <option value="server">Server</option>
+                <option value="workstation">Workstation</option>
+                <option value="generic">Generic</option>
+              </select>
+            </label>
+            
+            <div className="form-actions">
+              <button 
+                type="button" 
+                className="btn btn-danger" 
+                onClick={() => {
+                  if (window.confirm(`Delete ${multiSelectedDevices.length} selected devices?`)) {
+                    multiSelectedDevices.forEach(device => {
+                      dispatch(deleteDeviceAsync(device.id))
+                    })
+                  }
+                }}
+              >
+                Delete Selected Devices
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (!selected || (!device && !connection)) {
     return (
@@ -74,7 +141,7 @@ const PropertyEditor = () => {
         <header className="panel-header">
           <h3>Properties</h3>
         </header>
-        <p className="panel-placeholder">Select a device or connection.</p>
+        <p className="panel-placeholder">Select a device or connection, or Ctrl+click multiple devices.</p>
       </div>
     )
   }

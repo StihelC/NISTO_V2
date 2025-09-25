@@ -183,3 +183,4 @@ describe('DeviceList Component', () => {
     expect(otherDevice.closest('.list-item')).not.toHaveClass('is-selected')
   })
 })
+

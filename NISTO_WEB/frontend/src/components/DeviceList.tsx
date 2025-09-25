@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
 import { createDevice, createDeviceAsync, deleteDevice, deleteDeviceAsync, createBulkDevicesAsync } from '../store/devicesSlice'
-import { selectEntity } from '../store/uiSlice'
+import { selectEntity, toggleMultiSelect, clearMultiSelection } from '../store/uiSlice'
 import type { DeviceType, RootState } from '../store'
 
 const DEVICE_TYPES: DeviceType[] = ['switch', 'router', 'firewall', 'server', 'workstation', 'generic']
@@ -20,6 +20,7 @@ const DeviceList = () => {
   const dispatch = useDispatch()
   const devices = useSelector((state: RootState) => state.devices.items)
   const selected = useSelector((state: RootState) => state.ui.selected)
+  const multiSelected = useSelector((state: RootState) => state.ui.multiSelected)
 
   const [name, setName] = useState('')
   const [type, setType] = useState<DeviceType>('switch')
@@ -52,8 +53,12 @@ const DeviceList = () => {
     dispatch(deleteDeviceAsync(id))
   }
 
-  const handleSelect = (id: string) => {
-    dispatch(selectEntity({ kind: 'device', id }))
+  const handleSelect = (id: string, ctrlKey: boolean = false) => {
+    if (ctrlKey) {
+      dispatch(toggleMultiSelect({ kind: 'device', id }))
+    } else {
+      dispatch(selectEntity({ kind: 'device', id }))
+    }
   }
 
   const handleBulkSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -191,24 +196,54 @@ const DeviceList = () => {
             </button>
           </form>
         )}
+        
+        {/* Multi-selection info */}
+        {multiSelected && multiSelected.ids.length > 0 && (
+          <div className="multi-select-info">
+            <span>{multiSelected.ids.length} device{multiSelected.ids.length > 1 ? 's' : ''} selected</span>
+            <button 
+              type="button" 
+              className="btn btn-small" 
+              onClick={() => dispatch(clearMultiSelection())}
+            >
+              Clear Selection
+            </button>
+          </div>
+        )}
+        
+        <div className="multi-select-hint">
+          Hold Ctrl (or Cmd on Mac) and click to select multiple devices
+          <br />
+          Drag any selected device to move the entire group together
+        </div>
+        
         <ul className="list">
           {devices.length === 0 && <li className="panel-placeholder">No devices yet.</li>}
-          {devices.map((device) => (
-            <li
-              key={device.id}
-              className={`list-item ${
-                selected?.kind === 'device' && selected.id === device.id ? 'is-selected' : ''
-              }`}
-            >
-              <button type="button" className="list-row" onClick={() => handleSelect(device.id)}>
-                <span className="list-title">{device.name}</span>
-                <span className="list-caption">{device.type}</span>
-              </button>
-              <button type="button" className="danger-button" onClick={() => handleDelete(device.id)}>
-                Delete
-              </button>
-            </li>
-          ))}
+          {devices.map((device) => {
+            const isSingleSelected = selected?.kind === 'device' && selected.id === device.id
+            const isMultiSelected = multiSelected?.kind === 'device' && multiSelected.ids.includes(device.id)
+            const isSelected = isSingleSelected || isMultiSelected
+            
+            return (
+              <li
+                key={device.id}
+                className={`list-item ${isSelected ? 'is-selected' : ''} ${isMultiSelected ? 'is-multi-selected' : ''}`}
+              >
+                <button 
+                  type="button" 
+                  className="list-row" 
+                  onClick={(e) => handleSelect(device.id, e.ctrlKey || e.metaKey)}
+                >
+                  <span className="list-title">{device.name}</span>
+                  <span className="list-caption">{device.type}</span>
+                  {isMultiSelected && <span className="multi-select-indicator">✓</span>}
+                </button>
+                <button type="button" className="danger-button" onClick={() => handleDelete(device.id)}>
+                  Delete
+                </button>
+              </li>
+            )
+          })}
         </ul>
       </div>
     </div>

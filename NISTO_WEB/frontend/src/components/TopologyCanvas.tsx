@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
 import { selectConnections, selectDevices, selectSelectedEntity } from '../store/selectors'
-import { selectEntity } from '../store/uiSlice'
+import { selectEntity, toggleMultiSelect, clearMultiSelection } from '../store/uiSlice'
 import { updateDevice, updateDeviceAsync } from '../store/devicesSlice'
 
 const CANVAS_WIDTH = 4000
@@ -26,6 +26,18 @@ interface DragState {
   hasMoved: boolean
 }
 
+interface GroupDragState {
+  devices: {
+    id: string
+    offset: { x: number; y: number }
+    initialPosition: { x: number; y: number }
+    currentPosition: { x: number; y: number }
+  }[]
+  startTime: number
+  startPosition: { x: number; y: number }
+  hasMoved: boolean
+}
+
 interface PanState {
   isPanning: boolean
   startX: number
@@ -38,10 +50,12 @@ const TopologyCanvas = () => {
   const devices = useSelector(selectDevices)
   const connections = useSelector(selectConnections)
   const selected = useSelector(selectSelectedEntity)
+  const multiSelected = useSelector((state: any) => state.ui.multiSelected)
 
   const svgRef = useRef<SVGSVGElement | null>(null)
   const canvasAreaRef = useRef<HTMLDivElement | null>(null)
   const [dragState, setDragState] = useState<DragState | null>(null)
+  const [groupDragState, setGroupDragState] = useState<GroupDragState | null>(null)
   const [panState, setPanState] = useState<PanState | null>(null)
   const [zoom, setZoom] = useState(1)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
@@ -185,10 +199,22 @@ const TopologyCanvas = () => {
         }
       }
 
+      // Handle individual device drag
       const draggingPosition =
         dragState && dragState.id === device.id ? dragState.position : undefined
 
-      const position = draggingPosition ?? basePosition
+      // Handle group drag
+      let groupDragPosition = undefined
+      if (groupDragState) {
+        const groupDevice = groupDragState.devices.find(d => d.id === device.id)
+        if (groupDevice) {
+          groupDragPosition = groupDevice.currentPosition
+          // Debug: Log when using group drag position
+          console.log(`Using group drag position for ${device.id}:`, groupDragPosition)
+        }
+      }
+
+      const position = draggingPosition ?? groupDragPosition ?? basePosition
 
       return {
         device,
@@ -196,7 +222,7 @@ const TopologyCanvas = () => {
         y: position.y,
       }
     })
-  }, [devices, dragState, effectiveCanvasWidth, effectiveCanvasHeight, zoom, containerDimensions])
+  }, [devices, dragState, groupDragState, effectiveCanvasWidth, effectiveCanvasHeight, zoom, containerDimensions])
 
   const positionsById = useMemo(() => {
     const map = new Map<string, { x: number; y: number }>()
@@ -249,6 +275,10 @@ const TopologyCanvas = () => {
 
   const handleBackgroundClick = () => {
     dispatch(selectEntity(null))
+    // Also clear multi-selection if any exists
+    if (multiSelected) {
+      dispatch(clearMultiSelection())
+    }
   }
 
   const handleZoomIn = () => {
@@ -586,7 +616,10 @@ const TopologyCanvas = () => {
           })}
 
           {positionedDevices.map(({ device, x, y }) => {
-            const isSelected = selected?.kind === 'device' && selected.id === device.id
+            const isSingleSelected = selected?.kind === 'device' && selected.id === device.id
+            const isMultiSelected = multiSelected?.kind === 'device' && multiSelected.ids.includes(device.id)
+            const isSelected = isSingleSelected || isMultiSelected
+            const isGroupDragging = groupDragState?.devices.some(d => d.id === device.id) || false
             
             // Determine security status and visual indicators
             const riskLevel = device.config.riskLevel || 'Moderate'
@@ -615,13 +648,17 @@ const TopologyCanvas = () => {
             return (
               <g
                 key={device.id}
-                className={`topology-node ${isSelected ? 'is-selected' : ''}`}
+                className={`topology-node ${isSelected ? 'is-selected' : ''} ${isMultiSelected ? 'is-multi-selected' : ''} ${isGroupDragging ? 'is-group-dragging' : ''}`}
                 transform={`translate(${x}, ${y})`}
                 style={{ cursor: 'pointer' }}
                 onClick={(event) => {
                   event.stopPropagation()
                   console.log('Device clicked:', device.id)
-                  dispatch(selectEntity({ kind: 'device', id: device.id }))
+                  if (event.ctrlKey || event.metaKey) {
+                    dispatch(toggleMultiSelect({ kind: 'device', id: device.id }))
+                  } else {
+                    dispatch(selectEntity({ kind: 'device', id: device.id }))
+                  }
                 }}
                 onPointerDown={(event) => {
                   event.stopPropagation()
@@ -632,24 +669,84 @@ const TopologyCanvas = () => {
                     return
                   }
 
-                  setDragState({
-                    id: device.id,
-                    offsetX: svgPoint.x - currentPosition.x,
-                    offsetY: svgPoint.y - currentPosition.y,
-                    position: currentPosition,
-                    startTime: Date.now(),
-                    startPosition: { x: svgPoint.x, y: svgPoint.y },
-                    hasMoved: false,
-                  })
+                  // Check if this device is part of a multi-selection
+                  const isInMultiSelection = multiSelected?.kind === 'device' && multiSelected.ids.includes(device.id)
+                  
+                  if (isInMultiSelection && multiSelected.ids.length > 1) {
+                    // Start group drag for all selected devices
+                    const groupDevices = multiSelected.ids.map(deviceId => {
+                      const devicePosition = positionsById.get(deviceId)
+                      if (!devicePosition) return null
+                      
+                      return {
+                        id: deviceId,
+                        offset: {
+                          x: svgPoint.x - devicePosition.x,
+                          y: svgPoint.y - devicePosition.y
+                        },
+                        initialPosition: devicePosition,
+                        currentPosition: devicePosition
+                      }
+                    }).filter(Boolean) as GroupDragState['devices']
+
+                    setGroupDragState({
+                      devices: groupDevices,
+                      startTime: Date.now(),
+                      startPosition: { x: svgPoint.x, y: svgPoint.y },
+                      hasMoved: false,
+                    })
+                  } else {
+                    // Start single device drag
+                    setDragState({
+                      id: device.id,
+                      offsetX: svgPoint.x - currentPosition.x,
+                      offsetY: svgPoint.y - currentPosition.y,
+                      position: currentPosition,
+                      startTime: Date.now(),
+                      startPosition: { x: svgPoint.x, y: svgPoint.y },
+                      hasMoved: false,
+                    })
+                  }
+                  
                   event.currentTarget.setPointerCapture(event.pointerId)
                 }}
                 onPointerMove={(event) => {
-                  if (!dragState || dragState.id !== device.id) {
+                  const svgPoint = svgPointFromEvent(event)
+                  if (!svgPoint) {
                     return
                   }
 
-                  const svgPoint = svgPointFromEvent(event)
-                  if (!svgPoint) {
+                  // Handle group drag
+                  if (groupDragState) {
+                    const deltaX = Math.abs(svgPoint.x - groupDragState.startPosition.x)
+                    const deltaY = Math.abs(svgPoint.y - groupDragState.startPosition.y)
+                    const hasMoved = deltaX > 5 || deltaY > 5
+
+                    // Calculate new positions for all devices in the group
+                    const updatedDevices = groupDragState.devices.map(groupDevice => {
+                      const newX = svgPoint.x - groupDevice.offset.x
+                      const newY = svgPoint.y - groupDevice.offset.y
+                      const clampedPosition = clampPosition({ x: newX, y: newY })
+                      
+                      return {
+                        ...groupDevice,
+                        currentPosition: clampedPosition
+                      }
+                    })
+
+                    setGroupDragState(prev => prev ? {
+                      ...prev,
+                      devices: updatedDevices,
+                      hasMoved
+                    } : null)
+                    
+                    // Debug: Log group drag positions
+                    console.log('Group drag positions:', updatedDevices.map(d => ({ id: d.id, pos: d.currentPosition })))
+                    return
+                  }
+
+                  // Handle single device drag
+                  if (!dragState || dragState.id !== device.id) {
                     return
                   }
 
@@ -674,8 +771,29 @@ const TopologyCanvas = () => {
                   )
                 }}
                 onPointerUp={(event) => {
+                  event.currentTarget.releasePointerCapture(event.pointerId)
+                  
+                  // Handle group drag completion
+                  if (groupDragState) {
+                    const wasActuallyDragged = groupDragState.hasMoved
+                    const groupDevices = groupDragState.devices
+                    
+                    setGroupDragState(null)
+                    
+                    // Update positions for all devices if they were actually dragged
+                    if (wasActuallyDragged) {
+                      groupDevices.forEach(groupDevice => {
+                        dispatch(updateDeviceAsync({ 
+                          id: groupDevice.id, 
+                          position: groupDevice.currentPosition 
+                        }))
+                      })
+                    }
+                    return
+                  }
+                  
+                  // Handle single device drag completion
                   if (dragState && dragState.id === device.id) {
-                    event.currentTarget.releasePointerCapture(event.pointerId)
                     const finalPosition = dragState.position
                     const wasActuallyDragged = dragState.hasMoved
                     
@@ -689,8 +807,16 @@ const TopologyCanvas = () => {
                   }
                 }}
                 onPointerCancel={(event) => {
+                  event.currentTarget.releasePointerCapture(event.pointerId)
+                  
+                  // Cancel group drag
+                  if (groupDragState) {
+                    setGroupDragState(null)
+                    return
+                  }
+                  
+                  // Cancel single device drag
                   if (dragState && dragState.id === device.id) {
-                    event.currentTarget.releasePointerCapture(event.pointerId)
                     setDragState(null)
                   }
                 }}

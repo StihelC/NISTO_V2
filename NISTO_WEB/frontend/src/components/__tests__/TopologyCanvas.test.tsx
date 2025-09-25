@@ -285,3 +285,4 @@ describe('TopologyCanvas Component', () => {
     expect(mockSelectEntity).toHaveBeenCalledTimes(2)
   })
 })
+

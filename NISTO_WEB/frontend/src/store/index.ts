@@ -45,6 +45,7 @@ export type RootStateFromStore = ReturnType<typeof store.getState>
 export type { RootState, DeviceType } from './types'
 export { fetchDevices, createDeviceAsync, updateDeviceAsync, deleteDeviceAsync } from './devicesSlice'
 export { fetchConnections } from './connectionsSlice'
+export { selectEntity, toggleMultiSelect, clearMultiSelection } from './uiSlice'
 export * from './projectsSlice'
 export * from './historyActions'
 
