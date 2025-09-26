@@ -6,7 +6,7 @@ import { selectBoundaries } from '../store/boundariesSlice'
 interface ExportModalProps {
   isOpen: boolean
   onClose: () => void
-  svgRef: React.RefObject<SVGSVGElement>
+  svgRef: React.RefObject<SVGSVGElement | null>
 }
 
 const ExportModal = ({ isOpen, onClose, svgRef }: ExportModalProps) => {

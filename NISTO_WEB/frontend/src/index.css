@@ -1663,6 +1663,85 @@ hr {
   text-align: center;
 }
 
+/* Device Display Settings Styles */
+.modal-description {
+  margin: 0 0 1.5rem 0;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.settings-section {
+  margin-bottom: 1.5rem;
+}
+
+.settings-section h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.settings-description {
+  margin: 0 0 1rem 0;
+  font-size: 0.875rem;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.checkbox-label:hover {
+  background-color: #f9fafb;
+  border-color: #e5e7eb;
+}
+
+.checkbox-label:has(input:checked) {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: #3b82f6;
+  cursor: pointer;
+  border: 2px solid #d1d5db;
+  border-radius: 0.25rem;
+  background-color: white;
+  transition: all 0.15s ease;
+}
+
+.checkbox-label input[type="checkbox"]:checked {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.checkbox-label input[type="checkbox"]:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.checkbox-text {
+  font-size: 0.875rem;
+  color: #374151;
+  user-select: none;
+}
+
 /* Export Modal Styles */
 .export-section {
   margin-bottom: 2rem;

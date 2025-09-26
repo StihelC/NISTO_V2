@@ -1,5 +1,5 @@
 import { apiClient } from './axios'
-import type { Boundary } from '../store/types'
+// import type { Boundary } from '../store/types'
 
 export interface BoundaryResponse {
   id: string

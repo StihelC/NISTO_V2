@@ -19,7 +19,7 @@ export const useAutoSave = (intervalMs: number = 30000) => {
   const autoSaving = useSelector((state: RootState) => state.projects.autoSaving)
   
   const lastSavedState = useRef<string>('')
-  const autoSaveTimer = useRef<NodeJS.Timeout | null>(null)
+  const autoSaveTimer = useRef<number | null>(null)
   const lastChangeTime = useRef<number>(0)
 
   // Calculate current state hash for comparison
@@ -53,11 +53,11 @@ export const useAutoSave = (intervalMs: number = 30000) => {
 
     // Clear existing timer
     if (autoSaveTimer.current) {
-      clearTimeout(autoSaveTimer.current)
+      window.clearTimeout(autoSaveTimer.current)
     }
 
     // Schedule auto-save after delay
-    autoSaveTimer.current = setTimeout(() => {
+    autoSaveTimer.current = window.setTimeout(() => {
       // Only auto-save if enough time has passed since last change
       // This prevents constant auto-saving during rapid changes
       const timeSinceLastChange = Date.now() - lastChangeTime.current
@@ -95,7 +95,7 @@ export const useAutoSave = (intervalMs: number = 30000) => {
   // Manual trigger for immediate auto-save
   const manualAutoSave = () => {
     if (autoSaveTimer.current) {
-      clearTimeout(autoSaveTimer.current)
+      window.clearTimeout(autoSaveTimer.current)
     }
     triggerAutoSave()
   }

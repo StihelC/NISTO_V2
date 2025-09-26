@@ -213,7 +213,7 @@ const boundariesSlice = createSlice({
       }
     },
     
-    finishDrawing: (state, action: PayloadAction<{ label: string }>) => {
+    finishDrawing: (state, _action: PayloadAction<{ label: string }>) => {
       // Set the drawing state to false immediately for UI responsiveness
       // The actual boundary creation will be handled by the async thunk
       state.isDrawing = false

@@ -55,7 +55,7 @@ const ConnectionList = () => {
 
   const drawConnections = () => {
     console.log('🎨 Draw Connections clicked - fetching connections...')
-    dispatch(fetchConnections())
+    dispatch(fetchConnections() as any)
   }
 
   return (

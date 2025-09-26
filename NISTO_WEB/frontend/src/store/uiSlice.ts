@@ -1,7 +1,32 @@
 import { createSlice } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
 
-import type { SelectedEntity, UiState, MultiSelection, ContextMenuState } from './types'
+import type { SelectedEntity, UiState, ContextMenuState, DeviceDisplayPreferences } from './types'
+
+const defaultDisplayPreferences: DeviceDisplayPreferences = {
+  // General Properties
+  showDeviceName: true,
+  showDeviceType: true,
+  showCategorizationType: false,
+  
+  // Security Properties
+  showPatchLevel: false,
+  showEncryptionStatus: false,
+  showAccessControlPolicy: false,
+  showMonitoringEnabled: false,
+  showBackupPolicy: false,
+  
+  // Risk Properties
+  showRiskLevel: true,
+  showConfidentialityImpact: false,
+  showIntegrityImpact: false,
+  showAvailabilityImpact: false,
+  showComplianceStatus: false,
+  showVulnerabilities: false,
+  showAuthorizer: false,
+  showLastAssessment: false,
+  showNextAssessment: false,
+}
 
 const initialState: UiState = {
   selected: null,
@@ -11,6 +36,7 @@ const initialState: UiState = {
     canRedo: false,
   },
   contextMenu: null,
+  deviceDisplayPreferences: defaultDisplayPreferences,
 }
 
 const uiSlice = createSlice({
@@ -65,10 +91,16 @@ const uiSlice = createSlice({
     clearContextMenu(state) {
       state.contextMenu = null
     },
+    updateDeviceDisplayPreferences(state, action: PayloadAction<Partial<DeviceDisplayPreferences>>) {
+      state.deviceDisplayPreferences = { ...state.deviceDisplayPreferences, ...action.payload }
+    },
+    resetDeviceDisplayPreferences(state) {
+      state.deviceDisplayPreferences = defaultDisplayPreferences
+    },
   },
 })
 
-export const { selectEntity, toggleMultiSelect, clearMultiSelection, setContextMenu, setHistoryState, resetUi, clearContextMenu } = uiSlice.actions
+export const { selectEntity, toggleMultiSelect, clearMultiSelection, setContextMenu, setHistoryState, resetUi, clearContextMenu, updateDeviceDisplayPreferences, resetDeviceDisplayPreferences } = uiSlice.actions
 
 export default uiSlice.reducer
 

@@ -25,7 +25,7 @@ export const SaveLoadModal: React.FC<SaveLoadModalProps> = ({
   mode,
 }) => {
   const dispatch = useDispatch<AppDispatch>()
-  const { projects, isLoading, error, currentProject } = useSelector(
+  const { projects, isLoading, error } = useSelector(
     (state: RootState) => state.projects
   )
   

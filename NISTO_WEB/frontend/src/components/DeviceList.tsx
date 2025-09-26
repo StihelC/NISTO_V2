@@ -5,7 +5,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import { createDeviceAsync, deleteDeviceAsync, createBulkDevicesAsync } from '../store/devicesSlice'
 import { selectEntity, toggleMultiSelect, clearMultiSelection } from '../store/uiSlice'
 import type { DeviceType, RootState } from '../store'
-import { DEVICE_CATEGORIES, DEVICE_LABELS } from '../constants/deviceTypes'
+import { DEVICE_LABELS } from '../constants/deviceTypes'
 import DeviceIcon from './DeviceIcon'
 import DeviceIconPreview from './DeviceIconPreview'
 const ARRANGEMENT_TYPES = [
@@ -59,7 +59,7 @@ const DeviceList = () => {
     }
 
     // Only create device in backend - it will update local state when successful
-    dispatch(createDeviceAsync({ name, type }))
+    dispatch(createDeviceAsync({ name, type }) as any)
     setName('')
     setType('switch')
     setError(null)
@@ -67,7 +67,7 @@ const DeviceList = () => {
 
   const handleDelete = (id: string) => {
     // Only delete from backend - it will update local state when successful
-    dispatch(deleteDeviceAsync(id))
+    dispatch(deleteDeviceAsync(id) as any)
   }
 
   const handleSelect = (id: string, ctrlKey: boolean = false) => {
@@ -95,7 +95,7 @@ const DeviceList = () => {
       type: bulkType,
       quantity: bulkQuantity,
       arrangement: arrangement
-    }))
+    }) as any)
     
     // Reset form
     setBulkBaseName('')

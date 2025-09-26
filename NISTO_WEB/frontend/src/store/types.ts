@@ -110,11 +110,37 @@ export interface HistoryState {
   canRedo: boolean
 }
 
+export interface DeviceDisplayPreferences {
+  // General Properties
+  showDeviceName: boolean
+  showDeviceType: boolean
+  showCategorizationType: boolean
+  
+  // Security Properties
+  showPatchLevel: boolean
+  showEncryptionStatus: boolean
+  showAccessControlPolicy: boolean
+  showMonitoringEnabled: boolean
+  showBackupPolicy: boolean
+  
+  // Risk Properties
+  showRiskLevel: boolean
+  showConfidentialityImpact: boolean
+  showIntegrityImpact: boolean
+  showAvailabilityImpact: boolean
+  showComplianceStatus: boolean
+  showVulnerabilities: boolean
+  showAuthorizer: boolean
+  showLastAssessment: boolean
+  showNextAssessment: boolean
+}
+
 export interface UiState {
   selected: SelectedEntity
   multiSelected: MultiSelection | null
   history: HistoryState
   contextMenu: ContextMenuState | null
+  deviceDisplayPreferences: DeviceDisplayPreferences
 }
 
 export interface ContextMenuState {

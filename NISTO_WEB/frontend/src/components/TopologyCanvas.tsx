@@ -5,7 +5,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import { selectConnections, selectDevices, selectSelectedEntity } from '../store/selectors'
 import { resetConnections } from '../store/connectionsSlice'
 import { selectEntity, toggleMultiSelect, clearMultiSelection, setContextMenu, clearContextMenu, resetUi } from '../store/uiSlice'
-import { updateDevice, updateDeviceAsync, resetDevices } from '../store/devicesSlice'
+import { updateDeviceAsync, resetDevices } from '../store/devicesSlice'
 import { 
   startDrawing, 
   addDrawingPoint, 
@@ -19,14 +19,16 @@ import {
   selectCurrentBoundaryType,
   selectDrawingPoints,
   updateBoundary,
+  updateBoundaryAsync,
   BOUNDARY_LABELS,
   BOUNDARY_STYLES
 } from '../store/boundariesSlice'
 import { DEVICE_LABELS } from '../constants/deviceTypes'
-import { CONNECTION_TYPE_OPTIONS } from '../constants/connectionTypes'
+// import { CONNECTION_TYPE_OPTIONS } from '../constants/connectionTypes'
 import type { RootState } from '../store'
 import DeviceIcon from './DeviceIcon'
 import ExportModal from './ExportModal'
+import DeviceDisplaySettings from './DeviceDisplaySettings'
 import type { Boundary } from '../store/types'
 
 type BoundaryPosition = {
@@ -38,13 +40,16 @@ type BoundaryPosition = {
 
 const CANVAS_WIDTH = 1920
 const CANVAS_HEIGHT = 1080
+const CANVAS_PADDING = 80
+const TOTAL_CANVAS_WIDTH = CANVAS_WIDTH + CANVAS_PADDING * 2
+const TOTAL_CANVAS_HEIGHT = CANVAS_HEIGHT + CANVAS_PADDING * 2
 const NODE_RADIUS = 36
 const LABEL_PADDING = 6
 const LABEL_HEIGHT = 22
 const ESTIMATED_CHAR_WIDTH = 7
-const MIN_ZOOM = 1
-const MAX_ZOOM = 2.0
-const ZOOM_STEP = 0.1
+const MIN_ZOOM = 0.5
+const MAX_ZOOM = 3.0
+const ZOOM_STEP = 0.2
 
 const isValidNumber = (value: number | undefined | null): value is number =>
   typeof value === 'number' && !Number.isNaN(value)
@@ -162,6 +167,7 @@ const TopologyCanvas = () => {
   const devices = useSelector(selectDevices)
   const connections = useSelector(selectConnections)
   const selected = useSelector(selectSelectedEntity)
+  const deviceDisplayPreferences = useSelector((state: RootState) => state.ui.deviceDisplayPreferences)
   const multiSelected = useSelector((state: RootState) => state.ui.multiSelected)
   const contextMenu = useSelector((state: RootState) => state.ui.contextMenu)
   
@@ -177,45 +183,53 @@ const TopologyCanvas = () => {
   const [groupDragState, setGroupDragState] = useState<GroupDragState | null>(null)
   const [zoom, setZoom] = useState(1)
   const [zoomCenter, setZoomCenter] = useState({ x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 })
+  const zoomTimeoutRef = useRef<number | null>(null)
   const [containerDimensions, setContainerDimensions] = useState({
     width: CANVAS_WIDTH,
     height: CANVAS_HEIGHT
   })
   const [isExportModalOpen, setIsExportModalOpen] = useState(false)
+  const [isDisplaySettingsOpen, setIsDisplaySettingsOpen] = useState(false)
   const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null)
   const [isMouseDown, setIsMouseDown] = useState(false)
   const [mouseDownPosition, setMouseDownPosition] = useState<{ x: number; y: number } | null>(null)
-  const [contextMenuSelection, setContextMenuSelection] = useState<{ deviceIds: string[] } | null>(null)
+  // const [contextMenuSelection, setContextMenuSelection] = useState<{ deviceIds: string[] } | null>(null)
 
   // Calculate effective canvas dimensions based on zoom level and actual container size
   const effectiveCanvasWidth = useMemo(() => {
-    // Use actual container width as base, expand when zooming out
-    const baseWidth = Math.max(containerDimensions.width, CANVAS_WIDTH)
-    const expansionFactor = zoom < 1 ? (1 / zoom) : 1
-    return baseWidth * expansionFactor
-  }, [zoom, containerDimensions.width])
+    // For sub-1.0 zoom, keep consistent dimensions to prevent coordinate drift
+    return Math.max(containerDimensions.width, CANVAS_WIDTH)
+  }, [containerDimensions.width])
 
   const effectiveCanvasHeight = useMemo(() => {
-    // Use actual container height as base, expand when zooming out
-    const baseHeight = Math.max(containerDimensions.height, CANVAS_HEIGHT)
-    const expansionFactor = zoom < 1 ? (1 / zoom) : 1
-    return baseHeight * expansionFactor
-  }, [zoom, containerDimensions.height])
+    // For sub-1.0 zoom, keep consistent dimensions to prevent coordinate drift
+    return Math.max(containerDimensions.height, CANVAS_HEIGHT)
+  }, [containerDimensions.height])
 
   // Calculate viewBox dimensions to center the large canvas in the panel
   const viewBoxDimensions = useMemo(() => {
-    // At 100% zoom, show the entire canvas
+    // At 100% zoom, show the entire canvas plus a subtle margin around the edges
     // At higher zoom, show a smaller portion centered on zoomCenter
-    const viewBoxWidth = CANVAS_WIDTH / zoom
-    const viewBoxHeight = CANVAS_HEIGHT / zoom
+    // At lower zoom, ensure we don't exceed the actual canvas bounds
+    const viewBoxWidth = Math.min(TOTAL_CANVAS_WIDTH / zoom, TOTAL_CANVAS_WIDTH * 2)
+    const viewBoxHeight = Math.min(TOTAL_CANVAS_HEIGHT / zoom, TOTAL_CANVAS_HEIGHT * 2)
     
-    // Center the view around zoomCenter
+    // Center the view around zoomCenter, but constrain to canvas bounds
     const halfViewWidth = viewBoxWidth / 2
     const halfViewHeight = viewBoxHeight / 2
     
+    // Ensure the viewBox doesn't go outside the canvas bounds
+    const minX = -CANVAS_PADDING
+    const maxX = CANVAS_WIDTH + CANVAS_PADDING
+    const minY = -CANVAS_PADDING
+    const maxY = CANVAS_HEIGHT + CANVAS_PADDING
+    
+    const constrainedX = Math.max(minX, Math.min(maxX - viewBoxWidth, zoomCenter.x - halfViewWidth))
+    const constrainedY = Math.max(minY, Math.min(maxY - viewBoxHeight, zoomCenter.y - halfViewHeight))
+    
     return {
-      x: zoomCenter.x - halfViewWidth,
-      y: zoomCenter.y - halfViewHeight,
+      x: constrainedX,
+      y: constrainedY,
       width: viewBoxWidth,
       height: viewBoxHeight
     }
@@ -233,12 +247,12 @@ const TopologyCanvas = () => {
     if (devicesWithoutPosition.length > 0) {
       if (devicesWithoutPosition.length === 1) {
         fallbackPositions.set(devicesWithoutPosition[0].id, {
-          x: effectiveCanvasWidth / 2,
-          y: effectiveCanvasHeight / 2,
+          x: CANVAS_WIDTH / 2,
+          y: CANVAS_HEIGHT / 2,
         })
       } else {
         // Create multiple rings for better space utilization when zoomed out
-        const maxRadius = Math.min(effectiveCanvasWidth, effectiveCanvasHeight) / 2.1 - NODE_RADIUS * 2
+        const maxRadius = Math.min(CANVAS_WIDTH, CANVAS_HEIGHT) / 2.1 - NODE_RADIUS * 2
         const minRadius = NODE_RADIUS * 8
         const deviceCount = devicesWithoutPosition.length
         
@@ -259,8 +273,8 @@ const TopologyCanvas = () => {
           const angle = (deviceInRing / totalInThisRing) * Math.PI * 2
           
           fallbackPositions.set(device.id, {
-            x: effectiveCanvasWidth / 2 + radius * Math.cos(angle),
-            y: effectiveCanvasHeight / 2 + radius * Math.sin(angle),
+            x: CANVAS_WIDTH / 2 + radius * Math.cos(angle),
+            y: CANVAS_HEIGHT / 2 + radius * Math.sin(angle),
           })
         })
       }
@@ -269,27 +283,15 @@ const TopologyCanvas = () => {
     return devices.map((device, index) => {
       const fallback = fallbackPositions.get(device.id)
       let basePosition = device.position ?? fallback ?? {
-        x: effectiveCanvasWidth / 2 + index * 10,
-        y: effectiveCanvasHeight / 2 + index * 10,
+        x: CANVAS_WIDTH / 2 + index * 10,
+        y: CANVAS_HEIGHT / 2 + index * 10,
       }
 
-      // If device has a saved position and canvas is expanded, scale the position to use more space
+      // For zoom levels below 1.0, keep original positions to prevent coordinate drift
+      // The viewBox scaling will handle the visual zoom effect
       if (device.position && zoom < 1) {
-        const baseWidth = Math.max(containerDimensions.width, CANVAS_WIDTH)
-        const baseHeight = Math.max(containerDimensions.height, CANVAS_HEIGHT)
-        const scaleFactorX = effectiveCanvasWidth / baseWidth
-        const scaleFactorY = effectiveCanvasHeight / baseHeight
-        
-        // Scale position from center
-        const centerX = baseWidth / 2
-        const centerY = baseHeight / 2
-        const offsetX = (device.position.x - centerX) * scaleFactorX
-        const offsetY = (device.position.y - centerY) * scaleFactorY
-        
-        basePosition = {
-          x: effectiveCanvasWidth / 2 + offsetX,
-          y: effectiveCanvasHeight / 2 + offsetY,
-        }
+        // Simply use the original position without scaling
+        basePosition = device.position
       }
 
       // Handle individual device drag
@@ -392,13 +394,15 @@ const TopologyCanvas = () => {
         const viewBox = viewBoxDimensions
         const svgX = viewBox.x + (cursorX / rect.width) * viewBox.width
         const svgY = viewBox.y + (cursorY / rect.height) * viewBox.height
+        const clampedSvgX = Math.min(Math.max(svgX, 0), CANVAS_WIDTH)
+        const clampedSvgY = Math.min(Math.max(svgY, 0), CANVAS_HEIGHT)
         
         setIsMouseDown(true)
-        setMouseDownPosition({ x: svgX, y: svgY })
+        setMouseDownPosition({ x: clampedSvgX, y: clampedSvgY })
         
         if (drawingPoints.length === 0) {
           // Start drawing - set the first corner
-          dispatch(addDrawingPoint({ x: svgX, y: svgY }))
+          dispatch(addDrawingPoint({ x: clampedSvgX, y: clampedSvgY }))
         }
       }
       return
@@ -422,10 +426,12 @@ const TopologyCanvas = () => {
         const viewBox = viewBoxDimensions
         const svgX = viewBox.x + (cursorX / rect.width) * viewBox.width
         const svgY = viewBox.y + (cursorY / rect.height) * viewBox.height
+        const clampedSvgX = Math.min(Math.max(svgX, 0), CANVAS_WIDTH)
+        const clampedSvgY = Math.min(Math.max(svgY, 0), CANVAS_HEIGHT)
         
         // Complete the rectangle
         const firstPoint = drawingPoints[0]
-        const secondPoint = { x: svgX, y: svgY }
+        const secondPoint = { x: clampedSvgX, y: clampedSvgY }
         
         // Only create boundary if there's a meaningful size
         const minSize = 20 // minimum size in SVG units
@@ -465,7 +471,7 @@ const TopologyCanvas = () => {
           }
           
           // Create the boundary via API
-          dispatch(createBoundaryAsync(newBoundary))
+          dispatch(createBoundaryAsync(newBoundary) as any)
           
           // Finish the drawing
           dispatch(finishDrawing({ 
@@ -504,8 +510,10 @@ const TopologyCanvas = () => {
         const viewBox = viewBoxDimensions
         const svgX = viewBox.x + (cursorX / rect.width) * viewBox.width
         const svgY = viewBox.y + (cursorY / rect.height) * viewBox.height
-        
-        setMousePosition({ x: svgX, y: svgY })
+        const clampedSvgX = Math.min(Math.max(svgX, 0), CANVAS_WIDTH)
+        const clampedSvgY = Math.min(Math.max(svgY, 0), CANVAS_HEIGHT)
+
+        setMousePosition({ x: clampedSvgX, y: clampedSvgY })
       }
     } else {
       setMousePosition(null)
@@ -513,11 +521,11 @@ const TopologyCanvas = () => {
   }
 
   const handleZoomIn = () => {
-    setZoom(prevZoom => Math.min(MAX_ZOOM, prevZoom + ZOOM_STEP))
+    setZoom(prevZoom => Math.min(MAX_ZOOM, prevZoom + ZOOM_STEP * 1.5))
   }
 
   const handleZoomOut = () => {
-    setZoom(prevZoom => Math.max(MIN_ZOOM, prevZoom - ZOOM_STEP))
+    setZoom(prevZoom => Math.max(MIN_ZOOM, prevZoom - ZOOM_STEP * 1.5))
   }
 
   const handleZoomReset = () => {
@@ -562,14 +570,18 @@ const TopologyCanvas = () => {
     const svgX = viewBox.x + (cursorX / rect.width) * viewBox.width
     const svgY = viewBox.y + (cursorY / rect.height) * viewBox.height
     
-    // Calculate zoom delta
-    const delta = event.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP
+    // Calculate zoom delta with improved responsiveness
+    // Use a more aggressive zoom step based on deltaY magnitude
+    const deltaY = event.deltaY
+    const zoomFactor = Math.min(Math.abs(deltaY) / 100, 1) // Normalize deltaY
+    const baseDelta = deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP
+    const delta = baseDelta * (0.5 + zoomFactor * 0.5) // Scale between 0.5x and 1x of base step
     const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + delta))
     
     if (newZoom !== zoom) {
       // Calculate new center to keep the cursor point stable
-      const viewBoxWidth = CANVAS_WIDTH / newZoom
-      const viewBoxHeight = CANVAS_HEIGHT / newZoom
+      const viewBoxWidth = TOTAL_CANVAS_WIDTH / newZoom
+      const viewBoxHeight = TOTAL_CANVAS_HEIGHT / newZoom
       
       // Calculate where the cursor point should be in the new view
       const cursorRatioX = cursorX / rect.width
@@ -580,18 +592,42 @@ const TopologyCanvas = () => {
       const newCenterY = svgY - (cursorRatioY - 0.5) * viewBoxHeight
       
       // Constrain the center to keep content visible
-      const maxCenterX = CANVAS_WIDTH - viewBoxWidth / 2
-      const minCenterX = viewBoxWidth / 2
-      const maxCenterY = CANVAS_HEIGHT - viewBoxHeight / 2
-      const minCenterY = viewBoxHeight / 2
+      const canvasMinX = -CANVAS_PADDING
+      const canvasMaxX = CANVAS_WIDTH + CANVAS_PADDING
+      const canvasMinY = -CANVAS_PADDING
+      const canvasMaxY = CANVAS_HEIGHT + CANVAS_PADDING
+      const maxCenterX = canvasMaxX - viewBoxWidth / 2
+      const minCenterX = canvasMinX + viewBoxWidth / 2
+      const maxCenterY = canvasMaxY - viewBoxHeight / 2
+      const minCenterY = canvasMinY + viewBoxHeight / 2
       
       const constrainedCenterX = Math.max(minCenterX, Math.min(maxCenterX, newCenterX))
       const constrainedCenterY = Math.max(minCenterY, Math.min(maxCenterY, newCenterY))
       
+      // Clear any existing timeout
+      if (zoomTimeoutRef.current) {
+        window.clearTimeout(zoomTimeoutRef.current)
+      }
+      
+      // Apply zoom immediately for responsiveness
       setZoom(newZoom)
       setZoomCenter({ x: constrainedCenterX, y: constrainedCenterY })
+      
+      // Set a small timeout to prevent excessive updates
+      zoomTimeoutRef.current = window.setTimeout(() => {
+        zoomTimeoutRef.current = null
+      }, 16) // ~60fps
     }
   }, [zoom, viewBoxDimensions])
+
+  // Cleanup zoom timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (zoomTimeoutRef.current) {
+        window.clearTimeout(zoomTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Keyboard shortcuts for zoom and pan
   useEffect(() => {
@@ -623,7 +659,7 @@ const TopologyCanvas = () => {
   useEffect(() => {
     const updateDimensions = () => {
       if (canvasAreaRef.current) {
-        const rect = canvasAreaRef.current.getBoundingClientRect()
+        // const rect = canvasAreaRef.current.getBoundingClientRect()
         // Always use the large canvas dimensions for maximum space
         setContainerDimensions({
           width: CANVAS_WIDTH,
@@ -652,15 +688,15 @@ const TopologyCanvas = () => {
 
   // Fetch boundaries on component mount
   useEffect(() => {
-    dispatch(fetchBoundaries())
+    dispatch(fetchBoundaries() as any)
   }, [dispatch])
 
   const clampPosition = useCallback((value: { x: number; y: number }) => {
     return {
-      x: Math.min(effectiveCanvasWidth - NODE_RADIUS, Math.max(NODE_RADIUS, value.x)),
-      y: Math.min(effectiveCanvasHeight - NODE_RADIUS, Math.max(NODE_RADIUS, value.y)),
+      x: Math.min(CANVAS_WIDTH - NODE_RADIUS, Math.max(NODE_RADIUS, value.x)),
+      y: Math.min(CANVAS_HEIGHT - NODE_RADIUS, Math.max(NODE_RADIUS, value.y)),
     }
-  }, [effectiveCanvasWidth, effectiveCanvasHeight])
+  }, [])
 
   const svgPointFromEvent = useCallback(
     (event: PointerEvent<SVGGElement | SVGElement>) => {
@@ -805,6 +841,13 @@ const TopologyCanvas = () => {
             </button>
             <button 
               className="zoom-button" 
+              onClick={() => setIsDisplaySettingsOpen(true)}
+              title="Display Settings"
+            >
+              ⚙️
+            </button>
+            <button 
+              className="zoom-button" 
               onClick={() => setIsExportModalOpen(true)}
               title="Export Topology"
             >
@@ -826,6 +869,9 @@ const TopologyCanvas = () => {
           className="topology-canvas-svg"
           viewBox={`${viewBoxDimensions.x} ${viewBoxDimensions.y} ${viewBoxDimensions.width} ${viewBoxDimensions.height}`}
           preserveAspectRatio="xMidYMid meet"
+          style={{
+            transition: 'viewBox 0.15s ease-out'
+          }}
           onPointerLeave={() => {
             if (dragState) {
               setDragState(null)
@@ -855,7 +901,14 @@ const TopologyCanvas = () => {
             </radialGradient>
           </defs>
 
-          <rect width={effectiveCanvasWidth} height={effectiveCanvasHeight} className="topology-canvas-backdrop" />
+          <rect
+            x={-CANVAS_PADDING}
+            y={-CANVAS_PADDING}
+            width={TOTAL_CANVAS_WIDTH}
+            height={TOTAL_CANVAS_HEIGHT}
+            className="topology-canvas-margin"
+          />
+          <rect width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="topology-canvas-backdrop" />
 
           {connectionSegments.map(({ connection, source, target, midpoint, label }) => {
             const isSelected = selected?.kind === 'connection' && selected.id === connection.id
@@ -968,7 +1021,7 @@ const TopologyCanvas = () => {
                   const handleSize = 8
                   const handleColor = '#2563eb'
                   
-                  const ResizeHandle = ({ cx, cy, cursor, onMouseDown }) => (
+                  const ResizeHandle = ({ cx, cy, cursor, onMouseDown }: { cx: number; cy: number; cursor: string; onMouseDown: (e: React.MouseEvent) => void }) => (
                     <rect
                       x={cx - handleSize/2}
                       y={cy - handleSize/2}
@@ -986,17 +1039,17 @@ const TopologyCanvas = () => {
                     />
                   )
 
-                  const handleResizeStart = (e, corner) => {
+                    const handleResizeStart = (e: React.MouseEvent, corner: string) => {
                     e.stopPropagation()
                     e.preventDefault()
                     
                     const startX = e.clientX
                     const startY = e.clientY
-                    const svgRect = e.currentTarget.closest('svg').getBoundingClientRect()
+                    // const svgRect = e.currentTarget.closest('svg').getBoundingClientRect()
                     
                     const originalBounds = { minX, maxX, minY, maxY }
                     
-                    const handleMouseMove = (moveEvent) => {
+                    const handleMouseMove = (moveEvent: MouseEvent) => {
                       const deltaX = (moveEvent.clientX - startX) / zoom
                       const deltaY = (moveEvent.clientY - startY) / zoom
 
@@ -1048,7 +1101,7 @@ const TopologyCanvas = () => {
                       )
                     }
 
-                    const handleMouseUp = (upEvent) => {
+                    const handleMouseUp = (upEvent: MouseEvent) => {
                       document.removeEventListener('mousemove', handleMouseMove)
                       document.removeEventListener('mouseup', handleMouseUp)
 
@@ -1087,7 +1140,7 @@ const TopologyCanvas = () => {
                       }
 
                       dispatch(
-                        updateBoundaryAsync({
+                        (updateBoundaryAsync({
                           id: boundary.id,
                           updates: {
                             x: finalPosition.x,
@@ -1096,7 +1149,7 @@ const TopologyCanvas = () => {
                             height: finalPosition.height,
                             points: buildRectanglePoints(finalPosition)
                           }
-                        })
+                        }) as any)
                       )
                     }
                     
@@ -1111,25 +1164,25 @@ const TopologyCanvas = () => {
                         cx={minX} 
                         cy={minY} 
                         cursor="nw-resize"
-                        onMouseDown={(e) => handleResizeStart(e, 'top-left')}
+                        onMouseDown={(e: React.MouseEvent) => handleResizeStart(e, 'top-left')}
                       />
                       <ResizeHandle 
                         cx={maxX} 
                         cy={minY} 
                         cursor="ne-resize"
-                        onMouseDown={(e) => handleResizeStart(e, 'top-right')}
+                        onMouseDown={(e: React.MouseEvent) => handleResizeStart(e, 'top-right')}
                       />
                       <ResizeHandle 
                         cx={maxX} 
                         cy={maxY} 
                         cursor="se-resize"
-                        onMouseDown={(e) => handleResizeStart(e, 'bottom-right')}
+                        onMouseDown={(e: React.MouseEvent) => handleResizeStart(e, 'bottom-right')}
                       />
                       <ResizeHandle 
                         cx={minX} 
                         cy={maxY} 
                         cursor="sw-resize"
-                        onMouseDown={(e) => handleResizeStart(e, 'bottom-left')}
+                        onMouseDown={(e: React.MouseEvent) => handleResizeStart(e, 'bottom-left')}
                       />
                     </g>
                   )
@@ -1266,27 +1319,27 @@ const TopologyCanvas = () => {
             
             // Determine security status and visual indicators
             const riskLevel = device.config.riskLevel || 'Moderate'
-            const complianceStatus = device.config.complianceStatus || 'Not Assessed'
-            const vulnerabilities = parseInt(device.config.vulnerabilities || '0')
-            const monitoringEnabled = device.config.monitoringEnabled === 'true'
+            // const complianceStatus = device.config.complianceStatus || 'Not Assessed'
+            // const vulnerabilities = parseInt(device.config.vulnerabilities || '0')
+            // const monitoringEnabled = device.config.monitoringEnabled === 'true'
             
             // Choose gradient based on risk level
-            let gradientId = 'nodeGradient'
-            switch (riskLevel) {
-              case 'Very Low':
-              case 'Low':
-                gradientId = 'nodeGradientLowRisk'
-                break
-              case 'Moderate':
-                gradientId = 'nodeGradientMediumRisk'
-                break
-              case 'High':
-              case 'Very High':
-                gradientId = 'nodeGradientHighRisk'
-                break
-              default:
-                gradientId = 'nodeGradientUnknown'
-            }
+            // let gradientId = 'nodeGradient'
+            // switch (riskLevel) {
+            //   case 'Very Low':
+            //   case 'Low':
+            //     gradientId = 'nodeGradientLowRisk'
+            //     break
+            //   case 'Moderate':
+            //     gradientId = 'nodeGradientMediumRisk'
+            //     break
+            //   case 'High':
+            //   case 'Very High':
+            //     gradientId = 'nodeGradientHighRisk'
+            //     break
+            //   default:
+            //     gradientId = 'nodeGradientUnknown'
+            // }
 
             return (
               <g
@@ -1307,7 +1360,7 @@ const TopologyCanvas = () => {
                       dispatch(selectEntity({ kind: 'device', id: device.id }))
                     }
                   }
-                  setContextMenuSelection(null)
+                  // setContextMenuSelection(null)
                 }}
                 onContextMenu={(event) => {
                   event.preventDefault()
@@ -1334,7 +1387,7 @@ const TopologyCanvas = () => {
                     }
                   }
 
-                  setContextMenuSelection({ deviceIds: currentSelection })
+                  // setContextMenuSelection({ deviceIds: currentSelection })
 
                   dispatch(setContextMenu({
                     position: { x: menuX, y: menuY },
@@ -1477,10 +1530,10 @@ const TopologyCanvas = () => {
                     // Update positions for all devices if they were actually dragged
                     if (wasActuallyDragged) {
                       groupDevices.forEach(groupDevice => {
-                        dispatch(updateDeviceAsync({ 
-                          id: groupDevice.id, 
-                          position: groupDevice.currentPosition 
-                        }))
+                        dispatch((updateDeviceAsync({
+                          id: groupDevice.id,
+                          position: groupDevice.currentPosition
+                        }) as any))
                       })
                     }
                     return
@@ -1496,7 +1549,7 @@ const TopologyCanvas = () => {
                     // Only update position if the device was actually dragged
                     if (finalPosition && wasActuallyDragged) {
                       // Only update backend - it will update local state when successful
-                      dispatch(updateDeviceAsync({ id: device.id, position: finalPosition }))
+                      dispatch((updateDeviceAsync({ id: device.id, position: finalPosition }) as any))
                     }
                   }
                 }}
@@ -1560,26 +1613,179 @@ const TopologyCanvas = () => {
                 
                 {/* Security indicators removed for clean icon display */}
                 
-                <text className="topology-node-title" y={NODE_RADIUS + 20}>
-                  {device.name}
-                </text>
-                <text className="topology-node-subtitle" y={NODE_RADIUS + 38}>
-                  {DEVICE_LABELS[device.type] || device.type}
-                </text>
-                
-                {/* Risk level indicator */}
-                <text 
-                  className="topology-node-risk" 
-                  y={NODE_RADIUS + 56}
-                  fill={
-                    riskLevel === 'High' || riskLevel === 'Very High' ? '#ef4444' :
-                    riskLevel === 'Moderate' ? '#f59e0b' :
-                    riskLevel === 'Low' || riskLevel === 'Very Low' ? '#22c55e' :
-                    '#6b7280'
+                {/* Configurable device labels */}
+                {(() => {
+                  let yOffset = NODE_RADIUS + 20
+                  const labels = []
+                  
+                  // General Properties
+                  if (deviceDisplayPreferences.showDeviceName) {
+                    labels.push(
+                      <text key="name" className="topology-node-title" y={yOffset}>
+                        {device.name}
+                      </text>
+                    )
+                    yOffset += 18
                   }
-                >
-                  {riskLevel} Risk
-                </text>
+                  
+                  if (deviceDisplayPreferences.showDeviceType) {
+                    labels.push(
+                      <text key="type" className="topology-node-subtitle" y={yOffset}>
+                        {DEVICE_LABELS[device.type] || device.type}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showCategorizationType && device.config.categorizationType) {
+                    labels.push(
+                      <text key="categorization" className="topology-node-subtitle" y={yOffset}>
+                        {device.config.categorizationType}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  // Security Properties
+                  if (deviceDisplayPreferences.showPatchLevel && device.config.patchLevel) {
+                    labels.push(
+                      <text key="patch" className="topology-node-subtitle" y={yOffset}>
+                        Patch: {device.config.patchLevel}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showEncryptionStatus && device.config.encryptionStatus) {
+                    labels.push(
+                      <text key="encryption" className="topology-node-subtitle" y={yOffset}>
+                        Enc: {device.config.encryptionStatus}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showAccessControlPolicy && device.config.accessControlPolicy) {
+                    labels.push(
+                      <text key="access" className="topology-node-subtitle" y={yOffset}>
+                        Access: {device.config.accessControlPolicy}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showMonitoringEnabled && device.config.monitoringEnabled) {
+                    labels.push(
+                      <text key="monitoring" className="topology-node-subtitle" y={yOffset}>
+                        Monitoring: {device.config.monitoringEnabled === 'true' ? 'On' : 'Off'}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showBackupPolicy && device.config.backupPolicy) {
+                    labels.push(
+                      <text key="backup" className="topology-node-subtitle" y={yOffset}>
+                        Backup: {device.config.backupPolicy}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  // Risk Properties
+                  if (deviceDisplayPreferences.showRiskLevel) {
+                    labels.push(
+                      <text 
+                        key="risk"
+                        className="topology-node-risk" 
+                        y={yOffset}
+                        fill={
+                          riskLevel === 'High' || riskLevel === 'Very High' ? '#ef4444' :
+                          riskLevel === 'Moderate' ? '#f59e0b' :
+                          riskLevel === 'Low' || riskLevel === 'Very Low' ? '#22c55e' :
+                          '#6b7280'
+                        }
+                      >
+                        {riskLevel} Risk
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showConfidentialityImpact && device.config.confidentialityImpact) {
+                    labels.push(
+                      <text key="confidentiality" className="topology-node-subtitle" y={yOffset}>
+                        C: {device.config.confidentialityImpact}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showIntegrityImpact && device.config.integrityImpact) {
+                    labels.push(
+                      <text key="integrity" className="topology-node-subtitle" y={yOffset}>
+                        I: {device.config.integrityImpact}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showAvailabilityImpact && device.config.availabilityImpact) {
+                    labels.push(
+                      <text key="availability" className="topology-node-subtitle" y={yOffset}>
+                        A: {device.config.availabilityImpact}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showComplianceStatus && device.config.complianceStatus) {
+                    labels.push(
+                      <text key="compliance" className="topology-node-subtitle" y={yOffset}>
+                        Compliance: {device.config.complianceStatus}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showVulnerabilities && device.config.vulnerabilities) {
+                    labels.push(
+                      <text key="vulnerabilities" className="topology-node-subtitle" y={yOffset}>
+                        Vulns: {device.config.vulnerabilities}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showAuthorizer && device.config.authorizer) {
+                    labels.push(
+                      <text key="authorizer" className="topology-node-subtitle" y={yOffset}>
+                        AO: {device.config.authorizer}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showLastAssessment && device.config.lastAssessment) {
+                    labels.push(
+                      <text key="lastAssessment" className="topology-node-subtitle" y={yOffset}>
+                        Last: {device.config.lastAssessment}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  if (deviceDisplayPreferences.showNextAssessment && device.config.nextAssessment) {
+                    labels.push(
+                      <text key="nextAssessment" className="topology-node-subtitle" y={yOffset}>
+                        Next: {device.config.nextAssessment}
+                      </text>
+                    )
+                    yOffset += 18
+                  }
+                  
+                  return labels
+                })()}
               </g>
             )
           })}
@@ -1590,6 +1796,11 @@ const TopologyCanvas = () => {
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
         svgRef={svgRef}
+      />
+      
+      <DeviceDisplaySettings 
+        isOpen={isDisplaySettingsOpen}
+        onClose={() => setIsDisplaySettingsOpen(false)}
       />
     </div>
   )
