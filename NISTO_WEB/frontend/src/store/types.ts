@@ -39,6 +39,7 @@ export interface Device {
     x: number
     y: number
   }
+  displayPreferences?: DeviceDisplayPreferences
 }
 
 export interface DevicesState {

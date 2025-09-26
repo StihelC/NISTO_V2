@@ -238,23 +238,33 @@ a {
   filter: drop-shadow(0 12px 16px rgba(15, 23, 42, 0.2));
 }
 
+.topology-node-label-bg {
+  fill: rgba(255, 255, 255, 0.9);
+  stroke: rgba(148, 163, 184, 0.4);
+  stroke-width: 1;
+  filter: drop-shadow(0 2px 8px rgba(15, 23, 42, 0.1));
+}
+
 .topology-node-title {
   text-anchor: middle;
   font-weight: 600;
   font-size: 0.95rem;
   fill: #111827;
+  dominant-baseline: middle;
 }
 
 .topology-node-subtitle {
   text-anchor: middle;
   font-size: 0.8rem;
   fill: #4b5563;
+  dominant-baseline: middle;
 }
 
 .topology-node-risk {
   text-anchor: middle;
   font-size: 0.7rem;
   font-weight: 600;
+  dominant-baseline: middle;
 }
 
 .topology-node-icon {
@@ -1683,6 +1693,13 @@ hr {
 
 .settings-description {
   margin: 0 0 1rem 0;
+  font-size: 0.875rem;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.section-description {
+  margin: 0 0 1.5rem 0;
   font-size: 0.875rem;
   color: #6b7280;
   line-height: 1.5;

@@ -15,6 +15,7 @@ interface UpdateDevicePayload {
   type?: DeviceType
   position?: { x: number; y: number }
   config?: Record<string, string>
+  displayPreferences?: import('./types').DeviceDisplayPreferences
 }
 
 interface CreateBulkDevicesPayload {
@@ -242,6 +243,13 @@ const devicesSlice = createSlice({
         Object.assign(device, changes)
       }
     },
+    updateDeviceDisplayPreferences(state, action: PayloadAction<{ id: string; displayPreferences: import('./types').DeviceDisplayPreferences }>) {
+      const { id, displayPreferences } = action.payload
+      const device = state.items.find((item) => item.id === id)
+      if (device) {
+        device.displayPreferences = displayPreferences
+      }
+    },
     deleteDevice(state, action: PayloadAction<string>) {
       state.items = state.items.filter((device) => device.id !== action.payload)
     },
@@ -266,7 +274,12 @@ const devicesSlice = createSlice({
       .addCase(updateDeviceAsync.fulfilled, (state, action) => {
         const index = state.items.findIndex(device => device.id === action.payload.id)
         if (index !== -1) {
-          state.items[index] = action.payload
+          // Preserve displayPreferences when updating device
+          const currentDevice = state.items[index]
+          state.items[index] = {
+            ...action.payload,
+            displayPreferences: currentDevice.displayPreferences
+          }
         }
       })
       .addCase(deleteDeviceAsync.fulfilled, (state, action) => {
@@ -275,7 +288,7 @@ const devicesSlice = createSlice({
   },
 })
 
-export const { createDevice, updateDevice, deleteDevice, resetDevices, setDevices } =
+export const { createDevice, updateDevice, deleteDevice, resetDevices, setDevices, updateDeviceDisplayPreferences } =
   devicesSlice.actions
 
 export default devicesSlice.reducer

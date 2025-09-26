@@ -4,27 +4,33 @@ import DeviceGeneralTab from './DeviceGeneralTab'
 import DeviceSecurityTab from './DeviceSecurityTab'
 import DeviceControlsTab from './DeviceControlsTab'
 import DeviceRiskTab from './DeviceRiskTab'
+import DeviceDisplayTab from './DeviceDisplayTab'
 import DeviceTabs from './DeviceTabs'
 import type { DeviceSecurityConfig, DeviceTab, SecurityControl } from './types'
+import type { DeviceDisplayPreferences } from '../../store/types'
 
 interface DevicePropertiesPanelProps {
   name: string
   type: string
   securityConfig: DeviceSecurityConfig
+  displayPreferences: DeviceDisplayPreferences
   activeTab: DeviceTab
   onTabChange: (tab: DeviceTab) => void
   onChange: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void
   onControlUpdate: (controlId: string, updates: Partial<SecurityControl>) => void
+  onDisplayPreferencesChange: (preferences: Partial<DeviceDisplayPreferences>) => void
 }
 
 const DevicePropertiesPanel = ({
   name,
   type,
   securityConfig,
+  displayPreferences,
   activeTab,
   onTabChange,
   onChange,
   onControlUpdate,
+  onDisplayPreferencesChange,
 }: DevicePropertiesPanelProps) => (
   <div className="panel">
     <header className="panel-header">
@@ -65,6 +71,12 @@ const DevicePropertiesPanel = ({
           lastAssessment={securityConfig.lastAssessment}
           nextAssessment={securityConfig.nextAssessment}
           onChange={onChange}
+        />
+      )}
+      {activeTab === 'display' && (
+        <DeviceDisplayTab
+          displayPreferences={displayPreferences}
+          onChange={onDisplayPreferencesChange}
         />
       )}
     </div>

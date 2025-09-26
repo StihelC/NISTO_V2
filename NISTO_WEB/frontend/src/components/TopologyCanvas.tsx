@@ -28,7 +28,7 @@ import { DEVICE_LABELS } from '../constants/deviceTypes'
 import type { RootState } from '../store'
 import DeviceIcon from './DeviceIcon'
 import ExportModal from './ExportModal'
-import DeviceDisplaySettings from './DeviceDisplaySettings'
+// Removed DeviceDisplaySettings import - now using per-device preferences
 import type { Boundary } from '../store/types'
 
 type BoundaryPosition = {
@@ -167,7 +167,7 @@ const TopologyCanvas = () => {
   const devices = useSelector(selectDevices)
   const connections = useSelector(selectConnections)
   const selected = useSelector(selectSelectedEntity)
-  const deviceDisplayPreferences = useSelector((state: RootState) => state.ui.deviceDisplayPreferences)
+  // Remove global device display preferences - now using per-device preferences
   const multiSelected = useSelector((state: RootState) => state.ui.multiSelected)
   const contextMenu = useSelector((state: RootState) => state.ui.contextMenu)
   
@@ -189,7 +189,7 @@ const TopologyCanvas = () => {
     height: CANVAS_HEIGHT
   })
   const [isExportModalOpen, setIsExportModalOpen] = useState(false)
-  const [isDisplaySettingsOpen, setIsDisplaySettingsOpen] = useState(false)
+  // Removed global display settings - now using per-device preferences
   const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null)
   const [isMouseDown, setIsMouseDown] = useState(false)
   const [mouseDownPosition, setMouseDownPosition] = useState<{ x: number; y: number } | null>(null)
@@ -839,13 +839,7 @@ const TopologyCanvas = () => {
             >
               ⌂
             </button>
-            <button 
-              className="zoom-button" 
-              onClick={() => setIsDisplaySettingsOpen(true)}
-              title="Display Settings"
-            >
-              ⚙️
-            </button>
+            {/* Removed global display settings button - now using per-device preferences */}
             <button 
               className="zoom-button" 
               onClick={() => setIsExportModalOpen(true)}
@@ -1613,178 +1607,147 @@ const TopologyCanvas = () => {
                 
                 {/* Security indicators removed for clean icon display */}
                 
-                {/* Configurable device labels */}
+                {/* Single device info bubble */}
                 {(() => {
-                  let yOffset = NODE_RADIUS + 20
-                  const labels = []
+                  // Get device-specific display preferences or use defaults
+                  const deviceDisplayPreferences = device.displayPreferences || {
+                    // General Properties
+                    showDeviceName: true,
+                    showDeviceType: true,
+                    showCategorizationType: false,
+                    
+                    // Security Properties
+                    showPatchLevel: false,
+                    showEncryptionStatus: false,
+                    showAccessControlPolicy: false,
+                    showMonitoringEnabled: false,
+                    showBackupPolicy: false,
+                    
+                    // Risk Properties
+                    showRiskLevel: true,
+                    showConfidentialityImpact: false,
+                    showIntegrityImpact: false,
+                    showAvailabilityImpact: false,
+                    showComplianceStatus: false,
+                    showVulnerabilities: false,
+                    showAuthorizer: false,
+                    showLastAssessment: false,
+                    showNextAssessment: false,
+                  }
+                  
+                  // Collect all selected properties into a single text
+                  const infoLines = []
                   
                   // General Properties
                   if (deviceDisplayPreferences.showDeviceName) {
-                    labels.push(
-                      <text key="name" className="topology-node-title" y={yOffset}>
-                        {device.name}
-                      </text>
-                    )
-                    yOffset += 18
+                    infoLines.push(device.name)
                   }
                   
                   if (deviceDisplayPreferences.showDeviceType) {
-                    labels.push(
-                      <text key="type" className="topology-node-subtitle" y={yOffset}>
-                        {DEVICE_LABELS[device.type] || device.type}
-                      </text>
-                    )
-                    yOffset += 18
+                    infoLines.push(DEVICE_LABELS[device.type] || device.type)
                   }
                   
-                  if (deviceDisplayPreferences.showCategorizationType && device.config.categorizationType) {
-                    labels.push(
-                      <text key="categorization" className="topology-node-subtitle" y={yOffset}>
-                        {device.config.categorizationType}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showCategorizationType) {
+                    infoLines.push(`Cat: ${device.config.categorizationType || 'Not Set'}`)
                   }
                   
                   // Security Properties
-                  if (deviceDisplayPreferences.showPatchLevel && device.config.patchLevel) {
-                    labels.push(
-                      <text key="patch" className="topology-node-subtitle" y={yOffset}>
-                        Patch: {device.config.patchLevel}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showPatchLevel) {
+                    infoLines.push(`Patch: ${device.config.patchLevel || 'Unknown'}`)
                   }
                   
-                  if (deviceDisplayPreferences.showEncryptionStatus && device.config.encryptionStatus) {
-                    labels.push(
-                      <text key="encryption" className="topology-node-subtitle" y={yOffset}>
-                        Enc: {device.config.encryptionStatus}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showEncryptionStatus) {
+                    infoLines.push(`Enc: ${device.config.encryptionStatus || 'Not Set'}`)
                   }
                   
-                  if (deviceDisplayPreferences.showAccessControlPolicy && device.config.accessControlPolicy) {
-                    labels.push(
-                      <text key="access" className="topology-node-subtitle" y={yOffset}>
-                        Access: {device.config.accessControlPolicy}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showAccessControlPolicy) {
+                    infoLines.push(`Access: ${device.config.accessControlPolicy || 'Not Set'}`)
                   }
                   
-                  if (deviceDisplayPreferences.showMonitoringEnabled && device.config.monitoringEnabled) {
-                    labels.push(
-                      <text key="monitoring" className="topology-node-subtitle" y={yOffset}>
-                        Monitoring: {device.config.monitoringEnabled === 'true' ? 'On' : 'Off'}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showMonitoringEnabled) {
+                    const monitoringValue = device.config.monitoringEnabled === 'true' ? 'On' : 
+                                          device.config.monitoringEnabled === 'false' ? 'Off' : 'Not Set'
+                    infoLines.push(`Monitoring: ${monitoringValue}`)
                   }
                   
-                  if (deviceDisplayPreferences.showBackupPolicy && device.config.backupPolicy) {
-                    labels.push(
-                      <text key="backup" className="topology-node-subtitle" y={yOffset}>
-                        Backup: {device.config.backupPolicy}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showBackupPolicy) {
+                    infoLines.push(`Backup: ${device.config.backupPolicy || 'Not Set'}`)
                   }
                   
                   // Risk Properties
                   if (deviceDisplayPreferences.showRiskLevel) {
-                    labels.push(
-                      <text 
-                        key="risk"
-                        className="topology-node-risk" 
-                        y={yOffset}
-                        fill={
-                          riskLevel === 'High' || riskLevel === 'Very High' ? '#ef4444' :
-                          riskLevel === 'Moderate' ? '#f59e0b' :
-                          riskLevel === 'Low' || riskLevel === 'Very Low' ? '#22c55e' :
-                          '#6b7280'
-                        }
-                      >
-                        {riskLevel} Risk
-                      </text>
-                    )
-                    yOffset += 18
+                    infoLines.push(`${riskLevel} Risk`)
                   }
                   
-                  if (deviceDisplayPreferences.showConfidentialityImpact && device.config.confidentialityImpact) {
-                    labels.push(
-                      <text key="confidentiality" className="topology-node-subtitle" y={yOffset}>
-                        C: {device.config.confidentialityImpact}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showConfidentialityImpact) {
+                    infoLines.push(`C: ${device.config.confidentialityImpact || 'Not Set'}`)
                   }
                   
-                  if (deviceDisplayPreferences.showIntegrityImpact && device.config.integrityImpact) {
-                    labels.push(
-                      <text key="integrity" className="topology-node-subtitle" y={yOffset}>
-                        I: {device.config.integrityImpact}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showIntegrityImpact) {
+                    infoLines.push(`I: ${device.config.integrityImpact || 'Not Set'}`)
                   }
                   
-                  if (deviceDisplayPreferences.showAvailabilityImpact && device.config.availabilityImpact) {
-                    labels.push(
-                      <text key="availability" className="topology-node-subtitle" y={yOffset}>
-                        A: {device.config.availabilityImpact}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showAvailabilityImpact) {
+                    infoLines.push(`A: ${device.config.availabilityImpact || 'Not Set'}`)
                   }
                   
-                  if (deviceDisplayPreferences.showComplianceStatus && device.config.complianceStatus) {
-                    labels.push(
-                      <text key="compliance" className="topology-node-subtitle" y={yOffset}>
-                        Compliance: {device.config.complianceStatus}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showComplianceStatus) {
+                    infoLines.push(`Compliance: ${device.config.complianceStatus || 'Not Set'}`)
                   }
                   
-                  if (deviceDisplayPreferences.showVulnerabilities && device.config.vulnerabilities) {
-                    labels.push(
-                      <text key="vulnerabilities" className="topology-node-subtitle" y={yOffset}>
-                        Vulns: {device.config.vulnerabilities}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showVulnerabilities) {
+                    infoLines.push(`Vulns: ${device.config.vulnerabilities || '0'}`)
                   }
                   
-                  if (deviceDisplayPreferences.showAuthorizer && device.config.authorizer) {
-                    labels.push(
-                      <text key="authorizer" className="topology-node-subtitle" y={yOffset}>
-                        AO: {device.config.authorizer}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showAuthorizer) {
+                    infoLines.push(`AO: ${device.config.authorizer || 'Not Set'}`)
                   }
                   
-                  if (deviceDisplayPreferences.showLastAssessment && device.config.lastAssessment) {
-                    labels.push(
-                      <text key="lastAssessment" className="topology-node-subtitle" y={yOffset}>
-                        Last: {device.config.lastAssessment}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showLastAssessment) {
+                    infoLines.push(`Last: ${device.config.lastAssessment || 'Not Set'}`)
                   }
                   
-                  if (deviceDisplayPreferences.showNextAssessment && device.config.nextAssessment) {
-                    labels.push(
-                      <text key="nextAssessment" className="topology-node-subtitle" y={yOffset}>
-                        Next: {device.config.nextAssessment}
-                      </text>
-                    )
-                    yOffset += 18
+                  if (deviceDisplayPreferences.showNextAssessment) {
+                    infoLines.push(`Next: ${device.config.nextAssessment || 'Not Set'}`)
                   }
                   
-                  return labels
+                  // Only show bubble if there are properties to display
+                  if (infoLines.length === 0) {
+                    return null
+                  }
+                  
+                  // Calculate dimensions for multi-line bubble
+                  const lineHeight = 16
+                  const padding = 8
+                  const maxLineWidth = Math.max(...infoLines.map(line => line.length * 7))
+                  const bgWidth = maxLineWidth + (padding * 2)
+                  const bgHeight = (infoLines.length * lineHeight) + (padding * 2)
+                  const bgX = -bgWidth / 2
+                  const bgY = NODE_RADIUS + 8 // Closer to icon
+                  
+                  return (
+                    <g>
+                      <rect
+                        className="topology-node-label-bg"
+                        x={bgX}
+                        y={bgY}
+                        width={bgWidth}
+                        height={bgHeight}
+                        rx={8}
+                        ry={8}
+                        pointerEvents="none"
+                      />
+                      {infoLines.map((line, index) => (
+                        <text 
+                          key={index}
+                          className="topology-node-subtitle" 
+                          y={bgY + padding + (index * lineHeight) + 12}
+                        >
+                          {line}
+                        </text>
+                      ))}
+                    </g>
+                  )
                 })()}
               </g>
             )
@@ -1798,10 +1761,7 @@ const TopologyCanvas = () => {
         svgRef={svgRef}
       />
       
-      <DeviceDisplaySettings 
-        isOpen={isDisplaySettingsOpen}
-        onClose={() => setIsDisplaySettingsOpen(false)}
-      />
+      {/* Removed global DeviceDisplaySettings modal - now using per-device preferences */}
     </div>
   )
 }

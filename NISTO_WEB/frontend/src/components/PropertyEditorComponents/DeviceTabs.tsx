@@ -19,6 +19,9 @@ const DeviceTabs = ({ activeTab, onTabChange }: DeviceTabsProps) => (
     <button className={`tab ${activeTab === 'risk' ? 'active' : ''}`} onClick={() => onTabChange('risk')}>
       Risk
     </button>
+    <button className={`tab ${activeTab === 'display' ? 'active' : ''}`} onClick={() => onTabChange('display')}>
+      Display
+    </button>
   </div>
 )
 

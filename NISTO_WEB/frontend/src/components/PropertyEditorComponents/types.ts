@@ -1,6 +1,6 @@
 import type { DeviceType } from '../../store'
 
-export type DeviceTab = 'general' | 'security' | 'controls' | 'risk'
+export type DeviceTab = 'general' | 'security' | 'controls' | 'risk' | 'display'
 export type BulkDeviceTab = 'general' | 'security' | 'risk' | 'connections'
 export type BoundaryTab = 'general' | 'security' | 'risk'
 

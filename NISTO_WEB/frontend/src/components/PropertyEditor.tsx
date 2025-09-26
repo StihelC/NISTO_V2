@@ -2,7 +2,8 @@ import type { ChangeEvent } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
-import { updateDeviceAsync, deleteDeviceAsync } from '../store/devicesSlice'
+import { updateDeviceAsync, deleteDeviceAsync, updateDeviceDisplayPreferences } from '../store/devicesSlice'
+import type { DeviceDisplayPreferences } from '../store/types'
 import { updateConnection } from '../store/connectionsSlice'
 import { updateBoundary, updateBoundaryAsync, deleteBoundaryAsync, BOUNDARY_LABELS } from '../store/boundariesSlice'
 import { selectEntity, clearContextMenu } from '../store/uiSlice'
@@ -178,15 +179,72 @@ const PropertyEditor = () => {
       dispatch(updateDeviceAsync({ id: device.id, config: newConfig }))
     }
 
+    const handleDisplayPreferencesChange = (preferences: Partial<DeviceDisplayPreferences>) => {
+      const currentPreferences = device.displayPreferences || {
+        // General Properties
+        showDeviceName: true,
+        showDeviceType: true,
+        showCategorizationType: false,
+        
+        // Security Properties
+        showPatchLevel: false,
+        showEncryptionStatus: false,
+        showAccessControlPolicy: false,
+        showMonitoringEnabled: false,
+        showBackupPolicy: false,
+        
+        // Risk Properties
+        showRiskLevel: true,
+        showConfidentialityImpact: false,
+        showIntegrityImpact: false,
+        showAvailabilityImpact: false,
+        showComplianceStatus: false,
+        showVulnerabilities: false,
+        showAuthorizer: false,
+        showLastAssessment: false,
+        showNextAssessment: false,
+      }
+      
+      const newPreferences = { ...currentPreferences, ...preferences }
+      dispatch(updateDeviceDisplayPreferences({ id: device.id, displayPreferences: newPreferences }))
+    }
+
+    const deviceDisplayPreferences = device.displayPreferences || {
+      // General Properties
+      showDeviceName: true,
+      showDeviceType: true,
+      showCategorizationType: false,
+      
+      // Security Properties
+      showPatchLevel: false,
+      showEncryptionStatus: false,
+      showAccessControlPolicy: false,
+      showMonitoringEnabled: false,
+      showBackupPolicy: false,
+      
+      // Risk Properties
+      showRiskLevel: true,
+      showConfidentialityImpact: false,
+      showIntegrityImpact: false,
+      showAvailabilityImpact: false,
+      showComplianceStatus: false,
+      showVulnerabilities: false,
+      showAuthorizer: false,
+      showLastAssessment: false,
+      showNextAssessment: false,
+    }
+
     return (
       <DevicePropertiesPanel
         name={device.name}
         type={device.type}
         securityConfig={securityConfig}
+        displayPreferences={deviceDisplayPreferences}
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onChange={handleChange}
         onControlUpdate={handleControlUpdate}
+        onDisplayPreferencesChange={handleDisplayPreferencesChange}
       />
     )
   }
