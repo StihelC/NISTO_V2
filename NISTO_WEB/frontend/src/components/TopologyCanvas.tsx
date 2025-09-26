@@ -723,7 +723,7 @@ const TopologyCanvas = () => {
 
   if (devices.length === 0) {
     return (
-      <div className="panel topology-canvas" role="presentation">
+      <div className="topology-canvas" role="presentation">
         <header className="panel-header">
           <div>
             <h3>Topology View</h3>
@@ -744,7 +744,7 @@ const TopologyCanvas = () => {
   }
 
   return (
-    <div className={`panel topology-canvas ${zoom < 0.3 ? 'zoomed-out' : ''}`} role="presentation">
+    <div className={`topology-canvas ${zoom < 0.3 ? 'zoomed-out' : ''}`} role="presentation">
       <header className="panel-header">
         <div>
           <h3>Topology View</h3>

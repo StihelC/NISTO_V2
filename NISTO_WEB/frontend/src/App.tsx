@@ -18,7 +18,7 @@ const Shell = () => {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <h1 className="app-title">NISTO Web</h1>
+        <h1 className="app-title">CompliForged</h1>
         <div className="app-actions">
           <button
             type="button"

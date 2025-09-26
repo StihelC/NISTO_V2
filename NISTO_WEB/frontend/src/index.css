@@ -13,7 +13,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #f3f4f6;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #f0f9ff 100%);
 }
 
 a {
@@ -36,8 +36,9 @@ a {
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.5rem;
-  background-color: #111827;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
   color: white;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 .app-title {
@@ -59,7 +60,7 @@ a {
 
 .app-main {
   flex: 1;
-  padding: 0.25rem;
+  padding: 0;
   height: 100vh;
   overflow: hidden;
 }
@@ -71,7 +72,7 @@ a {
 }
 
 .panel {
-  background-color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.95);
   border-radius: 0.75rem;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   display: flex;
@@ -79,6 +80,8 @@ a {
   width: 100%;
   margin: 0.125rem;
   overflow: hidden;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 /* Resizable panels styles */
@@ -88,10 +91,15 @@ a {
   cursor: col-resize;
   transition: background-color 0.2s ease;
   position: relative;
+  flex-shrink: 0;
 }
 
 .resize-handle:hover {
   background-color: #2563eb;
+}
+
+.resize-handle:active {
+  background-color: #1d4ed8;
 }
 
 .resize-handle:before {
@@ -122,7 +130,8 @@ a {
 .sidebar-tabs {
   display: flex;
   border-bottom: 1px solid #e5e7eb;
-  background-color: #f9fafb;
+  background-color: rgba(249, 250, 251, 0.8);
+  backdrop-filter: blur(5px);
 }
 
 .sidebar-tab {
@@ -141,12 +150,12 @@ a {
 .sidebar-tab.active {
   color: #2563eb;
   border-bottom-color: #2563eb;
-  background-color: white;
+  background-color: rgba(255, 255, 255, 0.9);
 }
 
 .sidebar-tab:hover:not(.active) {
   color: #374151;
-  background-color: #f3f4f6;
+  background-color: rgba(243, 244, 246, 0.8);
 }
 
 .tab-content {
@@ -162,7 +171,7 @@ a {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: white;
+  background-color: rgba(255, 255, 255, 0.9);
 }
 
 .device-list .panel-content,
@@ -171,13 +180,24 @@ a {
   overflow-y: auto;
 }
 
+/* Override panel styling for topology canvas */
+.topology-panel {
+  margin: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
 .topology-canvas {
   height: 100%;
   min-height: 35vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: white;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  margin: 0;
 }
 
 .topology-canvas.zoomed-out {
@@ -219,10 +239,16 @@ a {
   min-height: 100%;
 }
 
+.topology-canvas-margin {
+  fill: transparent;
+  stroke: none;
+  stroke-width: 0;
+}
+
 .topology-canvas-backdrop {
-  fill: white;
-  stroke: #e2e8f0;
-  stroke-width: 1;
+  fill: #ffffff;
+  stroke: none;
+  stroke-width: 0;
   stroke-dasharray: none;
 }
 

@@ -73,20 +73,17 @@ export const downloadTopologyExcel = async (): Promise<void> => {
 }
 
 /**
- * Calculate the bounding box of all devices in the topology
+ * Calculate the bounding box of all devices and boundaries in the topology
  */
-const calculateDeviceBounds = (svgElement: SVGSVGElement) => {
+const calculateDeviceBounds = (svgElement: SVGSVGElement, boundaries?: any[]) => {
   const deviceGroups = svgElement.querySelectorAll('.topology-node')
-  
-  if (deviceGroups.length === 0) {
-    return { minX: 0, minY: 0, maxX: 1200, maxY: 800 }
-  }
   
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
   let maxY = -Infinity
   
+  // Calculate bounds from devices
   deviceGroups.forEach(group => {
     const transform = group.getAttribute('transform')
     if (transform) {
@@ -105,6 +102,25 @@ const calculateDeviceBounds = (svgElement: SVGSVGElement) => {
     }
   })
   
+  // Calculate bounds from boundaries
+  if (boundaries && boundaries.length > 0) {
+    boundaries.forEach(boundary => {
+      if (boundary.points && boundary.points.length >= 3) {
+        boundary.points.forEach((point: any) => {
+          minX = Math.min(minX, point.x)
+          minY = Math.min(minY, point.y)
+          maxX = Math.max(maxX, point.x)
+          maxY = Math.max(maxY, point.y)
+        })
+      }
+    })
+  }
+  
+  // If no devices or boundaries found, use default bounds
+  if (minX === Infinity || deviceGroups.length === 0) {
+    return { minX: 0, minY: 0, maxX: 1200, maxY: 800 }
+  }
+  
   // Add extra margin around the whole topology
   const margin = 50
   return {
@@ -116,186 +132,62 @@ const calculateDeviceBounds = (svgElement: SVGSVGElement) => {
 }
 
 /**
- * Create a clean SVG for export by recreating topology from scratch
+ * Create a clean SVG for export by cloning the existing SVG and fixing styling
  */
 const createExportSvg = (svgElement: SVGSVGElement, bounds: { minX: number, minY: number, maxX: number, maxY: number }, boundaries?: any[]) => {
   const contentWidth = bounds.maxX - bounds.minX
   const contentHeight = bounds.maxY - bounds.minY
   
-  // Create new SVG element
-  const exportSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  // Clone the entire SVG to preserve everything exactly as displayed
+  const exportSvg = svgElement.cloneNode(true) as SVGSVGElement
+  
+  // Set the viewBox to crop to the content bounds
+  exportSvg.setAttribute('viewBox', `${bounds.minX} ${bounds.minY} ${contentWidth} ${contentHeight}`)
   exportSvg.setAttribute('width', contentWidth.toString())
   exportSvg.setAttribute('height', contentHeight.toString())
-  exportSvg.setAttribute('viewBox', `${bounds.minX} ${bounds.minY} ${contentWidth} ${contentHeight}`)
-  exportSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
   
-  // Add white background
-  const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-  background.setAttribute('x', bounds.minX.toString())
-  background.setAttribute('y', bounds.minY.toString())
-  background.setAttribute('width', contentWidth.toString())
-  background.setAttribute('height', contentHeight.toString())
-  background.setAttribute('fill', 'white')
-  exportSvg.appendChild(background)
-  
-  // Copy connection lines first (so they appear behind devices)
-  const connections = svgElement.querySelectorAll('line')
-  connections.forEach(line => {
-    const newLine = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-    newLine.setAttribute('x1', line.getAttribute('x1') || '0')
-    newLine.setAttribute('y1', line.getAttribute('y1') || '0')
-    newLine.setAttribute('x2', line.getAttribute('x2') || '0')
-    newLine.setAttribute('y2', line.getAttribute('y2') || '0')
-    newLine.setAttribute('stroke', '#6b7280')
-    newLine.setAttribute('stroke-width', '2')
-    exportSvg.appendChild(newLine)
+  // Fix any label backgrounds that might appear black in export
+  const labelBgs = exportSvg.querySelectorAll('.topology-connection-label-bg, .topology-node-label-bg')
+  labelBgs.forEach(bg => {
+    bg.setAttribute('fill', 'white')
+    bg.setAttribute('stroke', '#9ca3af')
+    bg.setAttribute('stroke-width', '1')
   })
   
-  // Add boundaries if provided
-  if (boundaries && boundaries.length > 0) {
-    boundaries.forEach(boundary => {
-      if (boundary.points && boundary.points.length >= 3) {
-        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon')
-        const points = boundary.points.map((p: any) => `${p.x},${p.y}`).join(' ')
-        
-        polygon.setAttribute('points', points)
-        polygon.setAttribute('fill', boundary.style?.fill || 'none')
-        polygon.setAttribute('fill-opacity', (boundary.style?.fillOpacity || 0).toString())
-        polygon.setAttribute('stroke', boundary.style?.color || '#3b82f6')
-        polygon.setAttribute('stroke-width', (boundary.style?.strokeWidth || 2).toString())
-        
-        if (boundary.style?.dashArray) {
-          polygon.setAttribute('stroke-dasharray', boundary.style.dashArray)
-        }
-        
-        exportSvg.appendChild(polygon)
-        
-        // Add boundary label
-        if (boundary.label && boundary.points.length > 0) {
-          const centerX = boundary.points.reduce((sum: number, p: any) => sum + p.x, 0) / boundary.points.length
-          const centerY = boundary.points.reduce((sum: number, p: any) => sum + p.y, 0) / boundary.points.length
-          
-          const label = document.createElementNS('http://www.w3.org/2000/svg', 'text')
-          label.setAttribute('x', centerX.toString())
-          label.setAttribute('y', centerY.toString())
-          label.setAttribute('text-anchor', 'middle')
-          label.setAttribute('dominant-baseline', 'central')
-          label.setAttribute('font-family', 'Arial, sans-serif')
-          label.setAttribute('font-size', '14')
-          label.setAttribute('font-weight', 'bold')
-          label.setAttribute('fill', boundary.style?.color || '#3b82f6')
-          label.setAttribute('paint-order', 'stroke')
-          label.setAttribute('stroke', 'white')
-          label.setAttribute('stroke-width', '3')
-          label.textContent = boundary.label
-          
-          exportSvg.appendChild(label)
-        }
-      }
-    })
+  // Ensure all text is dark for visibility and properly positioned
+  const textElements = exportSvg.querySelectorAll('text')
+  textElements.forEach(text => {
+    const currentFill = text.getAttribute('fill')
+    if (!currentFill || currentFill === 'rgba(255, 255, 255, 0.85)' || currentFill.includes('rgba')) {
+      text.setAttribute('fill', '#111827')
+    }
+    
+    // Ensure text positioning attributes are preserved
+    if (!text.getAttribute('text-anchor')) {
+      text.setAttribute('text-anchor', 'middle')
+    }
+    if (!text.getAttribute('dominant-baseline')) {
+      text.setAttribute('dominant-baseline', 'middle')
+    }
+  })
+  
+  // Ensure connection lines are visible
+  const connectionLines = exportSvg.querySelectorAll('line.topology-connection-line')
+  connectionLines.forEach(line => {
+    line.setAttribute('stroke', '#6b7280')
+    line.setAttribute('stroke-width', '2')
+    line.setAttribute('stroke-linecap', 'round')
+  })
+  
+  // Ensure canvas backdrop is white
+  const backdrop = exportSvg.querySelector('.topology-canvas-backdrop')
+  if (backdrop) {
+    backdrop.setAttribute('fill', 'white')
   }
   
-  // Get all device groups and recreate them
-  const deviceGroups = svgElement.querySelectorAll('.topology-node')
-  deviceGroups.forEach(group => {
-    const transform = group.getAttribute('transform')
-    if (!transform) return
-    
-    const match = transform.match(/translate\(([^,]+),([^)]+)\)/)
-    if (!match) return
-    
-    const x = parseFloat(match[1])
-    const y = parseFloat(match[2])
-    
-    // Create group for this device
-    const deviceGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g')
-    deviceGroup.setAttribute('transform', `translate(${x}, ${y})`)
-    
-    // Create device circle
-    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
-    circle.setAttribute('cx', '0')
-    circle.setAttribute('cy', '0')
-    circle.setAttribute('r', '24')
-    circle.setAttribute('fill', '#3b82f6')
-    circle.setAttribute('stroke', '#1e40af')
-    circle.setAttribute('stroke-width', '2')
-    deviceGroup.appendChild(circle)
-    
-    // Get device info from text elements
-    const titleText = group.querySelector('.topology-node-title')
-    const subtitleText = group.querySelector('.topology-node-subtitle')
-    const riskText = group.querySelector('.topology-node-risk')
-    
-    // Add device type abbreviation in circle
-    if (subtitleText) {
-      const deviceType = subtitleText.textContent || 'DEV'
-      const abbrev = deviceType.substring(0, 3).toUpperCase()
-      
-      const typeText = document.createElementNS('http://www.w3.org/2000/svg', 'text')
-      typeText.setAttribute('x', '0')
-      typeText.setAttribute('y', '5')
-      typeText.setAttribute('text-anchor', 'middle')
-      typeText.setAttribute('font-family', 'Arial, sans-serif')
-      typeText.setAttribute('font-size', '12')
-      typeText.setAttribute('font-weight', 'bold')
-      typeText.setAttribute('fill', 'white')
-      typeText.textContent = abbrev
-      deviceGroup.appendChild(typeText)
-    }
-    
-    // Add device name below
-    if (titleText) {
-      const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text')
-      nameText.setAttribute('x', '0')
-      nameText.setAttribute('y', '44')
-      nameText.setAttribute('text-anchor', 'middle')
-      nameText.setAttribute('font-family', 'Arial, sans-serif')
-      nameText.setAttribute('font-size', '14')
-      nameText.setAttribute('font-weight', 'bold')
-      nameText.setAttribute('fill', '#1f2937')
-      nameText.textContent = titleText.textContent || 'Device'
-      deviceGroup.appendChild(nameText)
-    }
-    
-    // Add device type below name
-    if (subtitleText) {
-      const subtitleElement = document.createElementNS('http://www.w3.org/2000/svg', 'text')
-      subtitleElement.setAttribute('x', '0')
-      subtitleElement.setAttribute('y', '62')
-      subtitleElement.setAttribute('text-anchor', 'middle')
-      subtitleElement.setAttribute('font-family', 'Arial, sans-serif')
-      subtitleElement.setAttribute('font-size', '12')
-      subtitleElement.setAttribute('fill', '#6b7280')
-      subtitleElement.textContent = subtitleText.textContent || ''
-      deviceGroup.appendChild(subtitleElement)
-    }
-    
-    // Add risk level if available
-    if (riskText) {
-      const riskElement = document.createElementNS('http://www.w3.org/2000/svg', 'text')
-      riskElement.setAttribute('x', '0')
-      riskElement.setAttribute('y', '80')
-      riskElement.setAttribute('text-anchor', 'middle')
-      riskElement.setAttribute('font-family', 'Arial, sans-serif')
-      riskElement.setAttribute('font-size', '10')
-      
-      const riskContent = riskText.textContent || ''
-      if (riskContent.includes('High')) {
-        riskElement.setAttribute('fill', '#ef4444')
-      } else if (riskContent.includes('Moderate')) {
-        riskElement.setAttribute('fill', '#f59e0b')
-      } else if (riskContent.includes('Low')) {
-        riskElement.setAttribute('fill', '#22c55e')
-      } else {
-        riskElement.setAttribute('fill', '#6b7280')
-      }
-      
-      riskElement.textContent = riskContent
-      deviceGroup.appendChild(riskElement)
-    }
-    
-    exportSvg.appendChild(deviceGroup)
-  })
+  // Remove any margin elements that might interfere
+  const marginElements = exportSvg.querySelectorAll('.topology-canvas-margin')
+  marginElements.forEach(el => el.remove())
   
   return exportSvg
 }
@@ -306,8 +198,8 @@ const createExportSvg = (svgElement: SVGSVGElement, bounds: { minX: number, minY
 export const exportTopologyImage = (svgElement: SVGSVGElement, filename: string = 'topology.png', boundaries?: any[]): Promise<void> => {
   return new Promise((resolve, reject) => {
     try {
-      // Calculate the bounds of actual content
-      const bounds = calculateDeviceBounds(svgElement)
+      // Calculate the bounds of actual content including boundaries
+      const bounds = calculateDeviceBounds(svgElement, boundaries)
       const contentWidth = bounds.maxX - bounds.minX
       const contentHeight = bounds.maxY - bounds.minY
       
@@ -334,12 +226,12 @@ export const exportTopologyImage = (svgElement: SVGSVGElement, filename: string 
       ctx.fillStyle = 'white'
       ctx.fillRect(0, 0, contentWidth, contentHeight)
       
-      // Convert SVG to image
+      // Convert SVG to data URL to avoid tainted canvas issues
       const svgData = new XMLSerializer().serializeToString(exportSvg)
       console.log('Export SVG created:', svgData.substring(0, 500) + '...') // Debug log
       
-      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
-      const url = URL.createObjectURL(svgBlob)
+      // Create data URL from SVG
+      const svgDataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)))
       
       const img = new Image()
       img.onload = () => {
@@ -360,24 +252,20 @@ export const exportTopologyImage = (svgElement: SVGSVGElement, filename: string 
               link.click()
               link.remove()
               URL.revokeObjectURL(downloadUrl)
-              URL.revokeObjectURL(url)
               console.log('PNG export completed successfully')
               resolve()
             } else {
-              URL.revokeObjectURL(url)
               reject(new Error('Failed to create image blob'))
             }
           }, 'image/png')
         } catch (drawError) {
           console.error('Error drawing to canvas:', drawError)
-          URL.revokeObjectURL(url)
           reject(drawError)
         }
       }
       
       img.onerror = (error) => {
         console.error('Failed to load SVG image:', error)
-        URL.revokeObjectURL(url)
         reject(new Error('Failed to load SVG image'))
       }
       
@@ -385,13 +273,12 @@ export const exportTopologyImage = (svgElement: SVGSVGElement, filename: string 
       setTimeout(() => {
         if (!img.complete) {
           console.error('Image loading timeout')
-          URL.revokeObjectURL(url)
           reject(new Error('Image loading timeout'))
         }
       }, 10000) // 10 second timeout
       
       console.log('Starting image load...')
-      img.src = url
+      img.src = svgDataUrl
     } catch (error) {
       console.error('Error exporting image:', error)
       reject(error)

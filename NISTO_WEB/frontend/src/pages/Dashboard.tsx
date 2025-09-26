@@ -22,12 +22,12 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard">
-      <PanelGroup direction="horizontal">
+      <PanelGroup direction="horizontal" storage={{ getItem: () => null, setItem: () => {} }}>
         <Panel defaultSize={20} minSize={15} maxSize={35}>
           <TabbedSidebar />
         </Panel>
         <PanelResizeHandle className="resize-handle" />
-        <Panel defaultSize={60} minSize={30}>
+        <Panel defaultSize={60} minSize={30} className="topology-panel">
           <TopologyCanvas />
         </Panel>
         <PanelResizeHandle className="resize-handle" />
