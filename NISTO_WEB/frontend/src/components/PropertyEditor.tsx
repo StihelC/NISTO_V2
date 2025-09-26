@@ -2,11 +2,11 @@ import type { ChangeEvent } from 'react'
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 
-import { updateDevice, updateDeviceAsync, deleteDeviceAsync } from '../store/devicesSlice'
+import { updateDeviceAsync, deleteDeviceAsync, createBulkDevicesAsync } from '../store/devicesSlice'
 import { updateConnection, createConnectionAsync, fetchConnections } from '../store/connectionsSlice'
-import { updateBoundaryAsync, deleteBoundaryAsync, BOUNDARY_LABELS } from '../store/boundariesSlice'
-import { selectEntity } from '../store/uiSlice'
-import type { DeviceType, RootState } from '../store'
+import { updateBoundary, updateBoundaryAsync, deleteBoundaryAsync, BOUNDARY_LABELS } from '../store/boundariesSlice'
+import { selectEntity, clearContextMenu } from '../store/uiSlice'
+import type { AppDispatch, DeviceType, RootState } from '../store'
 import { DEVICE_CATEGORIES, DEVICE_LABELS } from '../constants/deviceTypes'
 import DeviceIcon from './DeviceIcon'
 
@@ -46,7 +46,7 @@ interface SecurityControl {
 }
 
 const PropertyEditor = () => {
-  const dispatch = useDispatch()
+  const dispatch = useDispatch<AppDispatch>()
   const selected = useSelector((state: RootState) => state.ui.selected)
   const multiSelected = useSelector((state: RootState) => state.ui.multiSelected)
   const devices = useSelector((state: RootState) => state.devices.items)
@@ -54,7 +54,9 @@ const PropertyEditor = () => {
   const boundaries = useSelector((state: RootState) => state.boundaries.items)
   
   // Move useState to top level to follow Rules of Hooks
-  const [activeTab, setActiveTab] = useState<'general' | 'security' | 'controls' | 'risk'>('general')
+  const [activeTab, setActiveTab] = useState<
+    'general' | 'security' | 'controls' | 'risk' | 'connections'
+  >('general')
   const [connectionType, setConnectionType] = useState('ethernet')
 
   const device = selected?.kind === 'device' ? devices.find((item) => item.id === selected.id) : null
@@ -87,103 +89,154 @@ const PropertyEditor = () => {
     return Math.sqrt(dx * dx + dy * dy)
   }
 
-  const connectNearestNeighbor = async () => {
-    if (multiSelectedDevices.length < 2) return
-    
-    const connectionPromises: Promise<any>[] = []
-    
-    multiSelectedDevices.forEach((device, index) => {
-      if (index === multiSelectedDevices.length - 1) return // Skip last device
-      
-      // Find nearest unconnected device
-      let nearestDevice = null
-      let nearestDistance = Infinity
-      
-      for (let i = index + 1; i < multiSelectedDevices.length; i++) {
-        const otherDevice = multiSelectedDevices[i]
-        const distance = calculateDistance(device, otherDevice)
-        
-        if (distance < nearestDistance) {
-          nearestDistance = distance
-          nearestDevice = otherDevice
+  const connectSelection = async (pattern: 'chain' | 'nearest' | 'star' | 'mesh'): Promise<number> => {
+    if (multiSelectedDevices.length < 2) {
+      window.alert('Select at least two devices to auto-connect.')
+      return 0
+    }
+
+    const plan: Array<{ sourceId: string; targetId: string }> = []
+
+    switch (pattern) {
+      case 'chain':
+        for (let i = 0; i < multiSelectedDevices.length - 1; i += 1) {
+          plan.push({
+            sourceId: multiSelectedDevices[i].id,
+            targetId: multiSelectedDevices[i + 1].id,
+          })
         }
+        break
+      case 'nearest':
+        multiSelectedDevices.forEach((device, index) => {
+          if (index === multiSelectedDevices.length - 1) {
+            return
+          }
+
+          let nearestDevice: typeof multiSelectedDevices[number] | null = null
+          let nearestDistance = Infinity
+
+          for (let i = index + 1; i < multiSelectedDevices.length; i += 1) {
+            const otherDevice = multiSelectedDevices[i]
+            const distance = calculateDistance(device, otherDevice)
+            if (distance < nearestDistance) {
+              nearestDistance = distance
+              nearestDevice = otherDevice
+            }
+          }
+
+          if (nearestDevice) {
+            plan.push({ sourceId: device.id, targetId: nearestDevice.id })
+          }
+        })
+        break
+      case 'star':
+        if (multiSelectedDevices.length >= 2) {
+          const centerDevice = multiSelectedDevices[0]
+          for (let i = 1; i < multiSelectedDevices.length; i += 1) {
+            plan.push({ sourceId: centerDevice.id, targetId: multiSelectedDevices[i].id })
+          }
+        }
+        break
+      case 'mesh':
+        for (let i = 0; i < multiSelectedDevices.length; i += 1) {
+          for (let j = i + 1; j < multiSelectedDevices.length; j += 1) {
+            plan.push({ sourceId: multiSelectedDevices[i].id, targetId: multiSelectedDevices[j].id })
+          }
+        }
+        break
+      default:
+        break
+    }
+
+    if (plan.length === 0) {
+      return 0
+    }
+
+    const existingConnectionKeys = new Set(
+      connections.map((connection) => {
+        const ids = [connection.sourceDeviceId, connection.targetDeviceId].sort()
+        return ids.join('::')
+      }),
+    )
+
+    let createdCount = 0
+
+    for (const { sourceId, targetId } of plan) {
+      const key = [sourceId, targetId].sort().join('::')
+      if (existingConnectionKeys.has(key)) {
+        continue
       }
-      
-      if (nearestDevice) {
-        connectionPromises.push(
-          dispatch(createConnectionAsync({
-            sourceDeviceId: device.id,
-            targetDeviceId: nearestDevice.id,
-            linkType: connectionType
-          }))
-        )
+
+      existingConnectionKeys.add(key)
+
+      try {
+        await dispatch(
+          createConnectionAsync({
+            sourceDeviceId: sourceId,
+            targetDeviceId: targetId,
+            linkType: connectionType,
+          }),
+        ).unwrap()
+        createdCount += 1
+      } catch (error) {
+        console.error('Failed to create connection', error)
       }
-    })
-    
-    // Wait for all connections to be created (but don't auto-draw)
-    await Promise.all(connectionPromises)
+    }
+
+    if (createdCount > 0) {
+      const refreshAction = await dispatch(fetchConnections())
+      if (fetchConnections.rejected.match(refreshAction)) {
+        console.error('Failed to refresh connections', refreshAction)
+      }
+    }
+
+    return createdCount
+  }
+
+  const connectNearestNeighbor = async () => {
+    const created = await connectSelection('nearest')
+    if (created === 0) {
+      window.alert('Nearest neighbor pairs are already connected.')
+    } else {
+      window.alert(`Created ${created} nearest neighbor connection${created === 1 ? '' : 's'}.`)
+    }
   }
 
   const connectStar = async () => {
-    if (multiSelectedDevices.length < 2) return
-    
-    const centerDevice = multiSelectedDevices[0] // Use first as center
-    const connectionPromises: Promise<any>[] = []
-    
-    for (let i = 1; i < multiSelectedDevices.length; i++) {
-      connectionPromises.push(
-        dispatch(createConnectionAsync({
-          sourceDeviceId: centerDevice.id,
-          targetDeviceId: multiSelectedDevices[i].id,
-          linkType: connectionType
-        }))
-      )
+    const created = await connectSelection('star')
+    if (created === 0) {
+      window.alert('A star centered on the first selected device already exists.')
+    } else {
+      window.alert(`Created ${created} star connection${created === 1 ? '' : 's'}.`)
     }
-    
-    await Promise.all(connectionPromises)
   }
 
   const connectChain = async () => {
-    if (multiSelectedDevices.length < 2) return
-    
-    const connectionPromises: Promise<any>[] = []
-    
-    for (let i = 0; i < multiSelectedDevices.length - 1; i++) {
-      connectionPromises.push(
-        dispatch(createConnectionAsync({
-          sourceDeviceId: multiSelectedDevices[i].id,
-          targetDeviceId: multiSelectedDevices[i + 1].id,
-          linkType: connectionType
-        }))
-      )
+    const created = await connectSelection('chain')
+    if (created === 0) {
+      window.alert('All adjacent selected device pairs are already connected.')
+    } else {
+      window.alert(`Created ${created} chain connection${created === 1 ? '' : 's'} between selected devices.`)
     }
-    
-    await Promise.all(connectionPromises)
   }
 
   const connectMesh = async () => {
-    if (multiSelectedDevices.length < 2) return
-    
-    const connectionPromises: Promise<any>[] = []
-    
-    for (let i = 0; i < multiSelectedDevices.length; i++) {
-      for (let j = i + 1; j < multiSelectedDevices.length; j++) {
-        connectionPromises.push(
-          dispatch(createConnectionAsync({
-            sourceDeviceId: multiSelectedDevices[i].id,
-            targetDeviceId: multiSelectedDevices[j].id,
-            linkType: connectionType
-          }))
-        )
-      }
+    const created = await connectSelection('mesh')
+    if (created === 0) {
+      window.alert('A full mesh already exists between the selected devices.')
+    } else {
+      window.alert(`Created ${created} mesh connection${created === 1 ? '' : 's'}.`)
     }
-    
-    await Promise.all(connectionPromises)
   }
 
-  const drawConnections = () => {
-    // Force refresh connections to ensure visual lines are drawn
-    dispatch(fetchConnections())
+  const drawConnections = async () => {
+    const created = await connectSelection('chain')
+    if (created === 0) {
+      window.alert('All adjacent selected device pairs are already connected.')
+    } else {
+      window.alert(`Created ${created} chain connection${created === 1 ? '' : 's'} between selected devices.`)
+    }
+    dispatch(clearContextMenu())
   }
 
   useEffect(() => {

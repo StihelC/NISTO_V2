@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux'
 
 import { selectConnections, selectDevices, selectSelectedEntity } from '../store/selectors'
 import { resetConnections } from '../store/connectionsSlice'
-import { selectEntity, toggleMultiSelect, clearMultiSelection, resetUi } from '../store/uiSlice'
+import { selectEntity, toggleMultiSelect, clearMultiSelection, setContextMenu, clearContextMenu, resetUi } from '../store/uiSlice'
 import { updateDevice, updateDeviceAsync, resetDevices } from '../store/devicesSlice'
 import { 
   startDrawing, 
@@ -23,8 +23,18 @@ import {
   BOUNDARY_STYLES
 } from '../store/boundariesSlice'
 import { DEVICE_LABELS } from '../constants/deviceTypes'
+import { CONNECTION_TYPE_OPTIONS } from '../constants/connectionTypes'
+import type { RootState } from '../store'
 import DeviceIcon from './DeviceIcon'
 import ExportModal from './ExportModal'
+import type { Boundary } from '../store/types'
+
+type BoundaryPosition = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
 
 const CANVAS_WIDTH = 1920
 const CANVAS_HEIGHT = 1080
@@ -32,7 +42,7 @@ const NODE_RADIUS = 36
 const LABEL_PADDING = 6
 const LABEL_HEIGHT = 22
 const ESTIMATED_CHAR_WIDTH = 7
-const MIN_ZOOM = 0.5
+const MIN_ZOOM = 1
 const MAX_ZOOM = 2.0
 const ZOOM_STEP = 0.1
 
@@ -40,25 +50,11 @@ const isValidNumber = (value: number | undefined | null): value is number =>
   typeof value === 'number' && !Number.isNaN(value)
 
 const DEFAULT_BOUNDARY_SIZE = 200
+const BOUNDARY_LABEL_OFFSET = 18
 
-const deriveBoundaryPosition = (boundary: any) => {
-  const { position } = boundary
+type BoundaryLabelPosition = 'center' | 'below'
 
-  if (
-    position &&
-    isValidNumber(position.x) &&
-    isValidNumber(position.y) &&
-    isValidNumber(position.width) &&
-    isValidNumber(position.height)
-  ) {
-    return {
-      x: position.x,
-      y: position.y,
-      width: position.width,
-      height: position.height
-    }
-  }
-
+const deriveBoundaryPosition = (boundary: Boundary): BoundaryPosition => {
   if (
     isValidNumber(boundary.x) &&
     isValidNumber(boundary.y) &&
@@ -98,7 +94,7 @@ const deriveBoundaryPosition = (boundary: any) => {
   }
 }
 
-const buildRectanglePoints = (position: { x: number; y: number; width: number; height: number }) => {
+const buildRectanglePoints = (position: BoundaryPosition) => {
   const { x, y, width, height } = position
   return [
     { x, y },
@@ -108,10 +104,34 @@ const buildRectanglePoints = (position: { x: number; y: number; width: number; h
   ]
 }
 
-const getBoundaryGeometry = (boundary: any) => {
+const getBoundaryGeometry = (boundary: Boundary) => {
   const position = deriveBoundaryPosition(boundary)
   const points = buildRectanglePoints(position)
   return { position, points }
+}
+
+const getBoundaryLabelProps = (
+  position: BoundaryPosition,
+  placement: BoundaryLabelPosition,
+) => {
+  const centerX = position.x + position.width / 2
+  const centerY = position.y + position.height / 2
+
+  switch (placement) {
+    case 'below':
+      return {
+        x: centerX,
+        y: position.y + position.height + BOUNDARY_LABEL_OFFSET,
+        dominantBaseline: 'hanging' as const,
+      }
+    case 'center':
+    default:
+      return {
+        x: centerX,
+        y: centerY,
+        dominantBaseline: 'middle' as const,
+      }
+  }
 }
 
 interface DragState {
@@ -142,7 +162,8 @@ const TopologyCanvas = () => {
   const devices = useSelector(selectDevices)
   const connections = useSelector(selectConnections)
   const selected = useSelector(selectSelectedEntity)
-  const multiSelected = useSelector((state: any) => state.ui.multiSelected)
+  const multiSelected = useSelector((state: RootState) => state.ui.multiSelected)
+  const contextMenu = useSelector((state: RootState) => state.ui.contextMenu)
   
   // Boundary state
   const boundaries = useSelector(selectBoundaries)
@@ -164,6 +185,7 @@ const TopologyCanvas = () => {
   const [mousePosition, setMousePosition] = useState<{ x: number; y: number } | null>(null)
   const [isMouseDown, setIsMouseDown] = useState(false)
   const [mouseDownPosition, setMouseDownPosition] = useState<{ x: number; y: number } | null>(null)
+  const [contextMenuSelection, setContextMenuSelection] = useState<{ deviceIds: string[] } | null>(null)
 
   // Calculate effective canvas dimensions based on zoom level and actual container size
   const effectiveCanvasWidth = useMemo(() => {
@@ -663,7 +685,6 @@ const TopologyCanvas = () => {
   )
 
 
-
   if (devices.length === 0) {
     return (
       <div className="panel topology-canvas" role="presentation">
@@ -882,6 +903,9 @@ const TopologyCanvas = () => {
           {/* Render boundaries */}
           {boundaries.map(boundary => {
             const { position, points } = getBoundaryGeometry(boundary)
+            const polygonPoints = points.map(p => `${p.x},${p.y}`).join(' ')
+            const labelPlacement = (boundary.config?.labelPosition as BoundaryLabelPosition) || 'center'
+            const labelProps = getBoundaryLabelProps(position, labelPlacement)
 
             const isSelected = selected?.kind === 'boundary' && selected.id === boundary.id
             return (
@@ -901,7 +925,7 @@ const TopologyCanvas = () => {
                 }}
               >
                 <polygon
-                  points={points.map(p => `${p.x},${p.y}`).join(' ')}
+                  points={polygonPoints}
                   fill={boundary.style.fill || 'none'}
                   fillOpacity={boundary.style.fillOpacity || 0}
                   stroke={isSelected ? '#2563eb' : boundary.style.color}
@@ -911,7 +935,7 @@ const TopologyCanvas = () => {
                 />
                 {/* Invisible clickable area for easier selection */}
                 <polygon
-                  points={points.map(p => `${p.x},${p.y}`).join(' ')}
+                  points={polygonPoints}
                   fill="transparent"
                   strokeWidth="10"
                   stroke="transparent"
@@ -920,9 +944,10 @@ const TopologyCanvas = () => {
                 {/* Boundary label */}
                 {points.length > 0 && (
                   <text
-                    x={points.reduce((sum, p) => sum + p.x, 0) / points.length}
-                    y={points.reduce((sum, p) => sum + p.y, 0) / points.length}
+                    x={labelProps.x}
+                    y={labelProps.y}
                     textAnchor="middle"
+                    dominantBaseline={labelProps.dominantBaseline}
                     className="topology-boundary-label"
                     fill={isSelected ? '#2563eb' : boundary.style.color}
                     fontSize="14"
@@ -974,13 +999,12 @@ const TopologyCanvas = () => {
                     const handleMouseMove = (moveEvent) => {
                       const deltaX = (moveEvent.clientX - startX) / zoom
                       const deltaY = (moveEvent.clientY - startY) / zoom
-                      
+
                       let newMinX = originalBounds.minX
-                      let newMaxX = originalBounds.maxX  
+                      let newMaxX = originalBounds.maxX
                       let newMinY = originalBounds.minY
                       let newMaxY = originalBounds.maxY
-                      
-                      // Adjust bounds based on which corner is being dragged
+
                       switch (corner) {
                         case 'top-left':
                           newMinX = Math.min(originalBounds.minX + deltaX, originalBounds.maxX - 50)
@@ -999,8 +1023,7 @@ const TopologyCanvas = () => {
                           newMaxY = Math.max(originalBounds.maxY + deltaY, originalBounds.minY + 50)
                           break
                       }
-                      
-                      // Update boundary points to match new bounds
+
                       const newPosition = {
                         x: newMinX,
                         y: newMinY,
@@ -1009,23 +1032,72 @@ const TopologyCanvas = () => {
                       }
 
                       const newPoints = buildRectanglePoints(newPosition)
-                      
-                      dispatch(updateBoundary({ 
-                        id: boundary.id, 
-                        updates: { 
-                          points: newPoints,
-                          position: newPosition,
-                          x: newMinX,
-                          y: newMinY,
-                          width: newMaxX - newMinX,
-                          height: newMaxY - newMinY
-                        }
-                      }))
+
+                      dispatch(
+                        updateBoundary({
+                          id: boundary.id,
+                          updates: {
+                            points: newPoints,
+                            position: newPosition,
+                            x: newPosition.x,
+                            y: newPosition.y,
+                            width: newPosition.width,
+                            height: newPosition.height
+                          }
+                        })
+                      )
                     }
-                    
-                    const handleMouseUp = () => {
+
+                    const handleMouseUp = (upEvent) => {
                       document.removeEventListener('mousemove', handleMouseMove)
                       document.removeEventListener('mouseup', handleMouseUp)
+
+                      const deltaX = (upEvent.clientX - startX) / zoom
+                      const deltaY = (upEvent.clientY - startY) / zoom
+
+                      let newMinX = originalBounds.minX
+                      let newMaxX = originalBounds.maxX
+                      let newMinY = originalBounds.minY
+                      let newMaxY = originalBounds.maxY
+
+                      switch (corner) {
+                        case 'top-left':
+                          newMinX = Math.min(originalBounds.minX + deltaX, originalBounds.maxX - 50)
+                          newMinY = Math.min(originalBounds.minY + deltaY, originalBounds.maxY - 50)
+                          break
+                        case 'top-right':
+                          newMaxX = Math.max(originalBounds.maxX + deltaX, originalBounds.minX + 50)
+                          newMinY = Math.min(originalBounds.minY + deltaY, originalBounds.maxY - 50)
+                          break
+                        case 'bottom-left':
+                          newMinX = Math.min(originalBounds.minX + deltaX, originalBounds.maxX - 50)
+                          newMaxY = Math.max(originalBounds.maxY + deltaY, originalBounds.minY + 50)
+                          break
+                        case 'bottom-right':
+                          newMaxX = Math.max(originalBounds.maxX + deltaX, originalBounds.minX + 50)
+                          newMaxY = Math.max(originalBounds.maxY + deltaY, originalBounds.minY + 50)
+                          break
+                      }
+
+                      const finalPosition = {
+                        x: newMinX,
+                        y: newMinY,
+                        width: newMaxX - newMinX,
+                        height: newMaxY - newMinY
+                      }
+
+                      dispatch(
+                        updateBoundaryAsync({
+                          id: boundary.id,
+                          updates: {
+                            x: finalPosition.x,
+                            y: finalPosition.y,
+                            width: finalPosition.width,
+                            height: finalPosition.height,
+                            points: buildRectanglePoints(finalPosition)
+                          }
+                        })
+                      )
                     }
                     
                     document.addEventListener('mousemove', handleMouseMove)
@@ -1224,6 +1296,9 @@ const TopologyCanvas = () => {
                 style={{ cursor: 'pointer' }}
                 onClick={(event) => {
                   event.stopPropagation()
+                  if (contextMenu) {
+                    dispatch(clearContextMenu())
+                  }
                   // Don't interfere with boundary drawing
                   if (!isDrawingBoundary) {
                     if (event.ctrlKey || event.metaKey) {
@@ -1232,6 +1307,55 @@ const TopologyCanvas = () => {
                       dispatch(selectEntity({ kind: 'device', id: device.id }))
                     }
                   }
+                  setContextMenuSelection(null)
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+
+                  if (isDrawingBoundary) {
+                    return
+                  }
+
+                  const menuX = event.clientX
+                  const menuY = event.clientY
+
+                  let currentSelection = multiSelected?.kind === 'device' ? multiSelected.ids : []
+
+                  if (!(event.ctrlKey || event.metaKey)) {
+                    if (!currentSelection.includes(device.id) || currentSelection.length < 2) {
+                      currentSelection = [device.id]
+                    }
+                  } else {
+                    if (currentSelection.includes(device.id)) {
+                      currentSelection = currentSelection.filter((id) => id !== device.id)
+                    } else {
+                      currentSelection = [...currentSelection, device.id]
+                    }
+                  }
+
+                  setContextMenuSelection({ deviceIds: currentSelection })
+
+                  dispatch(setContextMenu({
+                    position: { x: menuX, y: menuY },
+                    options: [
+                      {
+                        id: 'connect-devices',
+                        label: currentSelection.length >= 2
+                          ? `Connect ${currentSelection.length} devices`
+                          : 'Select at least two devices to connect',
+                        disabled: currentSelection.length < 2,
+                      },
+                      {
+                        id: 'clear-selection',
+                        label: 'Clear selection',
+                        disabled: currentSelection.length === 0,
+                      },
+                    ],
+                    meta: {
+                      selectedDeviceIds: currentSelection,
+                    },
+                  }))
                 }}
                 onPointerDown={(event) => {
                   event.stopPropagation()

@@ -333,6 +333,11 @@ def load_project(project_id: int, db: Session = Depends(get_db)):
             closed=boundary_data.get("closed", True),
             style=boundary_data["style"],
             created=boundary_data["created"],
+            x=boundary_data.get("x"),
+            y=boundary_data.get("y"),
+            width=boundary_data.get("width"),
+            height=boundary_data.get("height"),
+            config=boundary_data.get("config", {}),
         )
         crud.create_boundary(db, boundary_create)
     
@@ -403,6 +408,11 @@ def load_auto_save(db: Session = Depends(get_db)):
             closed=boundary_data.get("closed", True),
             style=boundary_data["style"],
             created=boundary_data["created"],
+            x=boundary_data.get("x"),
+            y=boundary_data.get("y"),
+            width=boundary_data.get("width"),
+            height=boundary_data.get("height"),
+            config=boundary_data.get("config", {}),
         )
         crud.create_boundary(db, boundary_create)
     

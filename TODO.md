@@ -1,0 +1,2 @@
+- Removed frontend unit test directories and helper files (`src/components/__tests__`, `src/store/__tests__`, `src/test`, `src/App.test.tsx`).
+- Deleted backend export/test artifacts (`backend/test_*.csv`, `backend/test_*.py`, etc.).

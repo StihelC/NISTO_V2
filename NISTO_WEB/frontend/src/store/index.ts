@@ -63,7 +63,7 @@ export {
   selectDrawingPoints,
   BOUNDARY_LABELS
 } from './boundariesSlice'
-export { selectEntity, toggleMultiSelect, clearMultiSelection } from './uiSlice'
+export { selectEntity, toggleMultiSelect, clearMultiSelection, clearContextMenu } from './uiSlice'
 export * from './projectsSlice'
 export * from './historyActions'
 

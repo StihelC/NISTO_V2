@@ -5,6 +5,7 @@ import { useDispatch, useSelector } from 'react-redux'
 import { createConnection, deleteConnection, fetchConnections } from '../store/connectionsSlice'
 import { selectEntity } from '../store/uiSlice'
 import type { RootState } from '../store'
+import { CONNECTION_TYPE_OPTIONS } from '../constants/connectionTypes'
 
 const ConnectionList = () => {
   const dispatch = useDispatch()
@@ -12,9 +13,10 @@ const ConnectionList = () => {
   const devices = useSelector((state: RootState) => state.devices.items)
   const selected = useSelector((state: RootState) => state.ui.selected)
 
+  const defaultLinkType = CONNECTION_TYPE_OPTIONS[0]?.value ?? 'ethernet'
   const [sourceDeviceId, setSourceDeviceId] = useState('')
   const [targetDeviceId, setTargetDeviceId] = useState('')
-  const [linkType, setLinkType] = useState('ethernet')
+  const [linkType, setLinkType] = useState(defaultLinkType)
   const [error, setError] = useState<string | null>(null)
 
   const deviceNameById = useMemo(() => {
@@ -39,7 +41,7 @@ const ConnectionList = () => {
     dispatch(createConnection({ sourceDeviceId, targetDeviceId, linkType }))
     setSourceDeviceId('')
     setTargetDeviceId('')
-    setLinkType('ethernet')
+    setLinkType(defaultLinkType)
     setError(null)
   }
 
@@ -129,11 +131,16 @@ const ConnectionList = () => {
           </label>
           <label className="form-field">
             <span>Link type</span>
-            <input
-              type="text"
+            <select
               value={linkType}
               onChange={(event) => setLinkType(event.target.value)}
-            />
+            >
+              {CONNECTION_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           {error && <p className="form-error">{error}</p>}
           <button type="submit" className="primary-button" disabled={devices.length < 2}>

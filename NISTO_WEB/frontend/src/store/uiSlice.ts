@@ -1,7 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
 
-import type { SelectedEntity, UiState, MultiSelection } from './types'
+import type { SelectedEntity, UiState, MultiSelection, ContextMenuState } from './types'
 
 const initialState: UiState = {
   selected: null,
@@ -10,6 +10,7 @@ const initialState: UiState = {
     canUndo: false,
     canRedo: false,
   },
+  contextMenu: null,
 }
 
 const uiSlice = createSlice({
@@ -20,6 +21,7 @@ const uiSlice = createSlice({
       state.selected = action.payload
       // Clear multi-selection when single selecting
       state.multiSelected = null
+      state.contextMenu = null
     },
     toggleMultiSelect(state, action: PayloadAction<{ kind: 'device' | 'connection', id: string }>) {
       const { kind, id } = action.payload
@@ -42,9 +44,14 @@ const uiSlice = createSlice({
           state.multiSelected.ids.push(id)
         }
       }
+      state.contextMenu = null
     },
     clearMultiSelection(state) {
       state.multiSelected = null
+      state.contextMenu = null
+    },
+    setContextMenu(state, action: PayloadAction<ContextMenuState | null>) {
+      state.contextMenu = action.payload
     },
     setHistoryState(
       state,
@@ -55,10 +62,13 @@ const uiSlice = createSlice({
     resetUi() {
       return initialState
     },
+    clearContextMenu(state) {
+      state.contextMenu = null
+    },
   },
 })
 
-export const { selectEntity, toggleMultiSelect, clearMultiSelection, setHistoryState, resetUi } = uiSlice.actions
+export const { selectEntity, toggleMultiSelect, clearMultiSelection, setContextMenu, setHistoryState, resetUi, clearContextMenu } = uiSlice.actions
 
 export default uiSlice.reducer
 

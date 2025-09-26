@@ -114,6 +114,17 @@ export interface UiState {
   selected: SelectedEntity
   multiSelected: MultiSelection | null
   history: HistoryState
+  contextMenu: ContextMenuState | null
+}
+
+export interface ContextMenuState {
+  position: { x: number; y: number }
+  options: Array<{
+    id: string
+    label: string
+    disabled?: boolean
+  }>
+  meta?: Record<string, unknown>
 }
 
 export interface ProjectsState {

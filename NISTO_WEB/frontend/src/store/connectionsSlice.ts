@@ -45,21 +45,23 @@ export const createConnectionAsync = createAsyncThunk(
   'connections/createConnectionAsync',
   async (payload: CreateConnectionPayload, { rejectWithValue }) => {
     try {
-      const connection = await connectionsApi.createConnection({
-        source_device_id: parseInt(payload.sourceDeviceId),
-        target_device_id: parseInt(payload.targetDeviceId),
+      const response = await connectionsApi.createConnection({
+        source_device_id: Number(payload.sourceDeviceId),
+        target_device_id: Number(payload.targetDeviceId),
         link_type: payload.linkType,
         properties: {},
       })
+
       return {
-        id: connection.id.toString(),
-        sourceDeviceId: connection.source_device_id.toString(),
-        targetDeviceId: connection.target_device_id.toString(),
-        linkType: connection.link_type,
-        properties: connection.properties,
+        id: response.id.toString(),
+        sourceDeviceId: response.source_device_id.toString(),
+        targetDeviceId: response.target_device_id.toString(),
+        linkType: response.link_type,
+        properties: response.properties,
       }
     } catch (error: any) {
-      return rejectWithValue(error.response?.data?.detail || 'Failed to create connection')
+      const detail = error?.response?.data?.detail
+      return rejectWithValue(detail ?? 'Failed to create connection')
     }
   }
 )
